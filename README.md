@@ -1,4 +1,4 @@
-# Canvas CLI
+# Canvas CLI for University Courses
 
 English | [简体中文](README.zh-CN.md)
 
@@ -6,21 +6,21 @@ English | [简体中文](README.zh-CN.md)
 [![Go version](https://img.shields.io/github/go-mod/go-version/hhe48203-ctrl/canvas-cli)](https://github.com/hhe48203-ctrl/canvas-cli/blob/main/go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A Canvas LMS command-line client for humans and AI agents, with high-level teaching workflows, stable structured output, and a searchable catalog of Canvas REST API operations.
+A command-line client for Canvas LMS in university and higher-education courses, built for students, instructors, teaching staff, and AI agents. It provides high-level course workflows, stable structured output, and a searchable catalog of Canvas REST API operations.
 
 > [!IMPORTANT]
-> This is an early-stage, independent community project. It is not developed, endorsed, or supported by Instructure. Before submitting an assignment, starting or completing a quiz, or performing another write operation, verify the target Canvas instance, course, and parameters.
+> This is an early-stage, independent community project for university course use. It is not developed, endorsed, or supported by Instructure. Before submitting an assignment, starting or completing a quiz, or performing another write operation, verify the target Canvas LMS instance, course, and parameters.
 
-Canvas CLI is designed for two kinds of users:
+Canvas CLI targets academic workflows in university Canvas LMS courses and is designed for two kinds of users:
 
-- people who want short commands for courses, assignments, files, and quizzes;
+- students, instructors, and teaching staff who want short commands for courses, assignments, files, and quizzes;
 - AI agents that need predictable JSON/YAML output, structured errors, explicit write confirmation, and access to less common Canvas endpoints.
 
 The authoritative Canvas API documentation is available from the [Instructure Developer Documentation](https://developerdocs.instructure.com/services/canvas). Canvas CLI authenticates with an OAuth2 access token in the `Authorization: Bearer <token>` header.
 
 ## Highlights
 
-- High-level commands for courses, assignments, files, and Classic Quizzes.
+- High-level commands for university courses, assignments, course files, and Classic Quizzes.
 - More than 1,100 generated Canvas REST API operations that can be searched, described, and invoked.
 - Automatic traversal of Canvas pagination through opaque `Link` headers.
 - JSON, YAML, and terminal table output with stable success and error envelopes.
@@ -300,6 +300,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution and catalog-update w
 
 ## Scope and safety boundaries
 
+- The project targets Canvas LMS deployments used for university and higher-education courses.
 - API access remains limited by the authenticated user's Canvas role, token scopes, and course permissions.
 - The CLI does not bypass access codes, IP restrictions, time limits, attempt limits, or other Canvas controls.
 - Quiz commands only transmit answers explicitly supplied by the user or calling agent; they do not generate or guess answers.

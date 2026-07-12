@@ -11,7 +11,7 @@ import (
 
 func newCoursesCommand() *cobra.Command {
 	courses := &cobra.Command{
-		Use: "courses", Short: "List and inspect Canvas courses",
+		Use: "courses", Short: "List and inspect university courses in Canvas LMS",
 		Example: `  canvas courses list --query enrollment_type=student
   canvas courses list --all-pages --json
   canvas courses show 12345 --query include[]=term`,

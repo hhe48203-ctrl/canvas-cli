@@ -1,4 +1,4 @@
-# Canvas CLI
+# 大学课程 Canvas CLI
 
 [English](README.md) | 简体中文
 
@@ -6,21 +6,21 @@
 [![Go version](https://img.shields.io/github/go-mod/go-version/hhe48203-ctrl/canvas-cli)](https://github.com/hhe48203-ctrl/canvas-cli/blob/main/go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-面向人和 AI Agent 的 Canvas LMS 命令行客户端，提供常用教学工作流、稳定的结构化输出，以及可搜索的完整 Canvas REST API 操作目录。
+面向大学及高等教育课程的 Canvas LMS 命令行客户端，服务于学生、教师、助教和 AI Agent，提供常用课程工作流、稳定的结构化输出，以及可搜索的完整 Canvas REST API 操作目录。
 
 > [!IMPORTANT]
-> 本项目处于早期开发阶段，是独立的社区项目，不由 Instructure 官方开发或支持。执行提交作业、开始或完成 Quiz 等写操作前，请核对目标 Canvas 实例、课程和参数。
+> 本项目处于早期开发阶段，是面向大学课程使用场景的独立社区项目，不由 Instructure 官方开发或支持。执行提交作业、开始或完成 Quiz 等写操作前，请核对目标 Canvas LMS 实例、课程和参数。
 
-一个用 Go 编写的 Canvas LMS 命令行客户端，面向两类用户：
+这是一个用 Go 编写、面向大学 Canvas LMS 课程的命令行客户端，主要服务于两类用户：
 
-- 人：用短命令完成课程、作业、文件和 Quiz 工作流；
+- 学生、教师和助教：用短命令完成课程、作业、课程文件和 Quiz 工作流；
 - AI Agent：用稳定的 JSON/YAML 输出、统一错误格式和 `api invoke` 调用 Canvas 接口。
 
 Canvas 官方 API 文档位于 [Instructure Developer Documentation](https://developerdocs.instructure.com/services/canvas)。API 使用 OAuth2 / Access Token，CLI 通过 `Authorization: Bearer <token>` 认证，具体认证说明见 [OAuth2 文档](https://developerdocs.instructure.com/services/canvas/oauth2/file.oauth)。
 
 ## 功能亮点
 
-- 课程、作业、文件和 Classic Quizzes 的高层命令；
+- 大学课程、作业、课程文件和 Classic Quizzes 的高层命令；
 - 1100+ 个随发行版生成的 Canvas REST API 操作，可搜索、描述和调用；
 - 自动跟随 Canvas `Link` header 获取全部分页结果；
 - JSON、YAML 和终端表格输出，成功与错误均有稳定 envelope；
@@ -318,6 +318,7 @@ go run . api invoke --help
 
 ## 设计边界
 
+- 本项目面向大学及高等教育机构使用的 Canvas LMS 课程环境；
 - CLI 调用的是 Canvas 官方 REST API，但具体可访问内容仍由账号角色、Token 和课程权限决定；
 - 不实现绕过访问码、IP 限制、时间限制或尝试次数限制的功能；
 - Quiz 命令只传输用户或 Agent 明确提供的答案，不自动生成或猜测答案；

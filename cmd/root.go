@@ -48,8 +48,8 @@ func Execute() {
 func newRootCommand() *cobra.Command {
 	root := &cobra.Command{
 		Use:           "canvas",
-		Short:         "Canvas LMS command-line client",
-		Long:          "Use Canvas from a terminal or an AI agent with human-friendly commands, structured output, and a discoverable generic REST API invoker.",
+		Short:         "Canvas LMS command-line client for university courses",
+		Long:          "Work with university Canvas LMS courses from a terminal or AI agent using human-friendly commands, structured output, and a discoverable generic REST API invoker.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		Example: `  # Configure credentials, then verify them
