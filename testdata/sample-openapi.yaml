@@ -1,0 +1,19 @@
+openapi: 3.0.0
+paths:
+  /api/v1/courses:
+    get:
+      operationId: listCourses
+      summary: List courses
+      parameters:
+        - name: enrollment_type
+          in: query
+    parameters:
+      - name: ignored
+        in: path
+  /api/v1/courses/{course_id}:
+    get:
+      operationId: showCourse
+      summary: Show course
+      parameters:
+        - name: course_id
+          in: path

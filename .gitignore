@@ -1,0 +1,27 @@
+# Build outputs
+/canvas
+/canvas-cli
+/bin/
+/dist/
+*.exe
+*.test
+*.out
+
+# Coverage and profiling
+coverage.txt
+coverage.html
+*.prof
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+config.json
+*.token
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
