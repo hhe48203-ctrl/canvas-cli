@@ -18,6 +18,10 @@ Canvas CLI targets academic workflows in university Canvas LMS courses and is de
 
 The authoritative Canvas API documentation is available from the [Instructure Developer Documentation](https://developerdocs.instructure.com/services/canvas). Canvas CLI authenticates with an OAuth2 access token in the `Authorization: Bearer <token>` header.
 
+## What can you use it for?
+
+Use Canvas CLI to bring routine Canvas work into the terminal: inspect courses and assignments, download course files, submit work, handle Classic Quiz workflows, or reach less-common endpoints through the searchable API catalog. Compared with repeatedly navigating the web interface, commands are easy to copy, script, combine with tools such as `jq`, and reuse across local terminals, automation, and AI agents. You can also package common commands, safety rules, and institution-specific procedures as a skill for Codex, Claude Code, or another agent: the agent reads structured data and prepares an action, while `--confirm` keeps write operations under explicit user control.
+
 ## Highlights
 
 - High-level commands for university courses, assignments, course files, and Classic Quizzes.

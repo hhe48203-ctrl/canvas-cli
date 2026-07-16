@@ -18,6 +18,10 @@
 
 Canvas 官方 API 文档位于 [Instructure Developer Documentation](https://developerdocs.instructure.com/services/canvas)。API 使用 OAuth2 / Access Token，CLI 通过 `Authorization: Bearer <token>` 认证，具体认证说明见 [OAuth2 文档](https://developerdocs.instructure.com/services/canvas/oauth2/file.oauth)。
 
+## 可以用来做什么？
+
+Canvas CLI 可以把日常 Canvas 操作带到终端：查看课程和作业、下载课程文件、提交作业、处理 Classic Quiz 工作流，或通过可搜索的 API 目录调用不常用的接口。相比反复操作网页，命令更方便复制、编写脚本、与 `jq` 等工具组合，也能在本地终端、自动化任务和 AI Agent 中复用同一套流程。还可以把常用命令、安全规则和学校特定流程整理成 Codex、Claude Code 或其他 Agent 的 skill：Agent 读取结构化数据并准备操作，写操作则继续通过 `--confirm` 由用户明确授权。
+
 ## 功能亮点
 
 - 大学课程、作业、课程文件和 Classic Quizzes 的高层命令；
