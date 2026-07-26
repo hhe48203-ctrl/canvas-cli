@@ -211,7 +211,7 @@ Generic invocation flags:
 - `--form name=value` adds a bracket-style Canvas form field.
 - `--body FILE` sends a raw body; `--body -` reads stdin.
 - `--header name=value` adds a request header.
-- `--all-pages` follows Canvas `Link` headers and combines JSON-array pages.
+- `--all-pages` follows Canvas `Link` headers and combines JSON-array or compound-document pages.
 - `--include-headers` includes the HTTP status, response headers, page count, and data.
 - `--confirm` authorizes a POST, PUT, PATCH, or DELETE request.
 

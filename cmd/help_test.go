@@ -149,6 +149,33 @@ func TestEmitHTTPResponseCollectsAllPages(t *testing.T) {
 	}
 }
 
+func TestPageAccumulatorCollectsCanvasCompoundDocuments(t *testing.T) {
+	first := decodeJSON([]byte(`{
+		"meta":{"primaryCollection":"comments"},
+		"comments":[{"id":1}],
+		"authors":[{"id":10,"name":"First"}]
+	}`))
+	combined, err := newPageAccumulator(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second := decodeJSON([]byte(`{
+		"meta":{"primaryCollection":"comments"},
+		"comments":[{"id":2}],
+		"authors":[{"id":10,"name":"First"},{"id":11,"name":"Second"}]
+	}`))
+	if err := combined.Append(second); err != nil {
+		t.Fatal(err)
+	}
+	result := combined.Result().(map[string]any)
+	if got := len(result["comments"].([]any)); got != 2 {
+		t.Fatalf("comments = %#v", result["comments"])
+	}
+	if got := len(result["authors"].([]any)); got != 2 {
+		t.Fatalf("authors = %#v", result["authors"])
+	}
+}
+
 func TestDecodeJSONPreservesCanvasIntegerIDs(t *testing.T) {
 	value, ok := decodeJSON([]byte(`{"id":9007199254740993}`)).(map[string]any)
 	if !ok {

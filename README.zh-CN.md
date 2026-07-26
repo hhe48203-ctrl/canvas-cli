@@ -168,7 +168,7 @@ canvas api invoke GET /api/v1/courses
 canvas api invoke GET /api/v1/courses \
   --query enrollment_type=student
 
-# 自动跟随 Canvas 的 opaque Link header，合并所有 JSON array 页面
+# 自动跟随 Canvas 的 opaque Link header，合并 JSON array 或 compound document 页面
 canvas api invoke GET /api/v1/courses --all-pages
 
 canvas api invoke GET /api/v1/courses/{course_id} \
@@ -210,7 +210,7 @@ printf '%s' '{"query":"{ course(id: \"123\") { name } }"}' | \
 - `--query name=value`：添加 query 参数，可重复用于数组；
 - `--form name=value`：添加 Canvas bracket-style 表单字段，可重复；
 - `--header name=value`：添加请求头；
-- `--all-pages`：对返回 JSON array 的 GET 自动取回全部页面；
+- `--all-pages`：对返回 JSON array 或 compound document 的 GET 自动取回全部页面；
 - `--include-headers`：输出 HTTP status、headers、页数和 data。
 
 通用命令的意义是：不必为 Canvas 的每个 endpoint 都手写一层 CLI。OpenAPI 是 API 的机器可读说明书，可用于生成 Go 客户端、参数帮助、请求/响应模型和测试；高层命令则负责把多个 API 请求组合成更适合人的工作流。Canvas 官方文档说明其 API 文档可以生成 OpenAPI 3.0 规范。

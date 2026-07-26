@@ -139,9 +139,9 @@ func emitHTTPResponse(ctx context.Context, c *canvas.Client, resp canvas.Respons
 	data := decodeJSON(resp.Body)
 	pages := 1
 	if allPages {
-		items, ok := data.([]any)
-		if !ok {
-			return fmt.Errorf("--all-pages requires an endpoint that returns a JSON array")
+		combined, err := newPageAccumulator(data)
+		if err != nil {
+			return err
 		}
 		seen := map[string]bool{}
 		for next := canvas.NextLink(resp.Headers); next != ""; next = canvas.NextLink(resp.Headers) {
@@ -149,19 +149,16 @@ func emitHTTPResponse(ctx context.Context, c *canvas.Client, resp canvas.Respons
 				return fmt.Errorf("pagination loop detected at %s", next)
 			}
 			seen[next] = true
-			var err error
 			resp, err = c.Request(ctx, http.MethodGet, next, nil, nil, "")
 			if err != nil {
 				return fmt.Errorf("fetch page %d: %w", pages+1, err)
 			}
-			page, ok := decodeJSON(resp.Body).([]any)
-			if !ok {
-				return fmt.Errorf("page %d did not return a JSON array", pages+1)
+			if err := combined.Append(decodeJSON(resp.Body)); err != nil {
+				return fmt.Errorf("page %d: %w", pages+1, err)
 			}
-			items = append(items, page...)
 			pages++
 		}
-		data = items
+		data = combined.Result()
 	}
 	if includeHeaders {
 		return emit(map[string]any{
@@ -172,6 +169,111 @@ func emitHTTPResponse(ctx context.Context, c *canvas.Client, resp canvas.Respons
 		})
 	}
 	return emit(data)
+}
+
+type pageAccumulator struct {
+	items    []any
+	compound map[string]any
+	primary  string
+}
+
+func newPageAccumulator(data any) (*pageAccumulator, error) {
+	if items, ok := data.([]any); ok {
+		return &pageAccumulator{items: items}, nil
+	}
+	compound, primary, items, err := compoundPage(data)
+	if err != nil {
+		return nil, fmt.Errorf("--all-pages %w", err)
+	}
+	return &pageAccumulator{items: items, compound: compound, primary: primary}, nil
+}
+
+func (a *pageAccumulator) Append(data any) error {
+	if a.compound == nil {
+		items, ok := data.([]any)
+		if !ok {
+			return fmt.Errorf("did not return a JSON array")
+		}
+		a.items = append(a.items, items...)
+		return nil
+	}
+
+	compound, primary, items, err := compoundPage(data)
+	if err != nil {
+		return err
+	}
+	if primary != a.primary {
+		return fmt.Errorf("compound document changed primary collection from %q to %q", a.primary, primary)
+	}
+	a.items = append(a.items, items...)
+	mergeSecondaryCollections(a.compound, compound, primary)
+	return nil
+}
+
+func (a *pageAccumulator) Result() any {
+	if a.compound == nil {
+		return a.items
+	}
+	a.compound[a.primary] = a.items
+	return a.compound
+}
+
+func compoundPage(data any) (map[string]any, string, []any, error) {
+	document, ok := data.(map[string]any)
+	if !ok {
+		return nil, "", nil, fmt.Errorf("requires an endpoint that returns a JSON array or Canvas compound document")
+	}
+	meta, ok := document["meta"].(map[string]any)
+	if !ok {
+		return nil, "", nil, fmt.Errorf("requires a compound document with meta.primaryCollection")
+	}
+	primary, ok := meta["primaryCollection"].(string)
+	if !ok || primary == "" {
+		return nil, "", nil, fmt.Errorf("requires a compound document with meta.primaryCollection")
+	}
+	items, ok := document[primary].([]any)
+	if !ok {
+		return nil, "", nil, fmt.Errorf("compound document primary collection %q is not an array", primary)
+	}
+	return document, primary, items, nil
+}
+
+func mergeSecondaryCollections(destination, source map[string]any, primary string) {
+	for name, value := range source {
+		if name == primary {
+			continue
+		}
+		incoming, ok := value.([]any)
+		if !ok {
+			continue
+		}
+		existing, _ := destination[name].([]any)
+		seen := make(map[string]bool, len(existing))
+		for _, item := range existing {
+			seen[compoundItemKey(item)] = true
+		}
+		for _, item := range incoming {
+			key := compoundItemKey(item)
+			if !seen[key] {
+				existing = append(existing, item)
+				seen[key] = true
+			}
+		}
+		destination[name] = existing
+	}
+}
+
+func compoundItemKey(item any) string {
+	if object, ok := item.(map[string]any); ok {
+		if id, exists := object["id"]; exists {
+			return "id:" + fmt.Sprint(id)
+		}
+	}
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Sprintf("%#v", item)
+	}
+	return string(data)
 }
 
 func parsePairs(values []string) url.Values {
