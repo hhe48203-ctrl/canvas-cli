@@ -234,19 +234,31 @@ func multipartUpload(ctx context.Context, c *Client, endpoint string, params map
 
 // NextLink returns the opaque next-page URL from an RFC 8288 Link header.
 func NextLink(header http.Header) string {
-	for _, part := range splitLinkHeader(header.Values("Link")) {
-		sections := strings.Split(part, ";")
-		if len(sections) < 2 {
+	var linkValues []string
+	for name, values := range header {
+		if strings.EqualFold(name, "Link") {
+			linkValues = append(linkValues, values...)
+		}
+	}
+	for _, part := range splitLinkHeader(linkValues) {
+		part = strings.TrimSpace(part)
+		end := strings.IndexByte(part, '>')
+		if !strings.HasPrefix(part, "<") || end < 1 {
 			continue
 		}
-		urlPart := strings.TrimSpace(sections[0])
-		if !strings.HasPrefix(urlPart, "<") || !strings.HasSuffix(urlPart, ">") {
-			continue
-		}
-		for _, parameter := range sections[1:] {
+		for _, parameter := range splitOutside(part[end+1:], ';', false) {
 			name, value, ok := strings.Cut(strings.TrimSpace(parameter), "=")
-			if ok && strings.EqualFold(name, "rel") && strings.Trim(value, `"`) == "next" {
-				return strings.TrimSuffix(strings.TrimPrefix(urlPart, "<"), ">")
+			if !ok || !strings.EqualFold(name, "rel") {
+				continue
+			}
+			value = strings.TrimSpace(value)
+			if unquoted, err := strconv.Unquote(value); err == nil {
+				value = unquoted
+			}
+			for _, relation := range strings.Fields(value) {
+				if strings.EqualFold(relation, "next") {
+					return part[1:end]
+				}
 			}
 		}
 	}
@@ -256,24 +268,45 @@ func NextLink(header http.Header) string {
 func splitLinkHeader(values []string) []string {
 	var result []string
 	for _, value := range values {
-		start := 0
-		inAngles := false
-		for i, r := range value {
-			switch r {
+		result = append(result, splitOutside(value, ',', true)...)
+	}
+	return result
+}
+
+func splitOutside(value string, separator byte, trackAngles bool) []string {
+	var result []string
+	start := 0
+	inAngles := false
+	inQuotes := false
+	escaped := false
+	for i := 0; i < len(value); i++ {
+		char := value[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inQuotes && char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '"' && !inAngles {
+			inQuotes = !inQuotes
+			continue
+		}
+		if trackAngles && !inQuotes {
+			switch char {
 			case '<':
 				inAngles = true
 			case '>':
 				inAngles = false
-			case ',':
-				if !inAngles {
-					result = append(result, value[start:i])
-					start = i + 1
-				}
 			}
 		}
-		result = append(result, value[start:])
+		if char == separator && !inAngles && !inQuotes {
+			result = append(result, value[start:i])
+			start = i + 1
+		}
 	}
-	return result
+	return append(result, value[start:])
 }
 
 func contentType(path string) string {

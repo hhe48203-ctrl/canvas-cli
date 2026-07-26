@@ -65,6 +65,15 @@ func TestNextLink(t *testing.T) {
 	}
 }
 
+func TestNextLinkHandlesRFCRelationsAndDelimiters(t *testing.T) {
+	header := http.Header{"link": {
+		`<https://canvas.test/api/v1/courses?opaque=a,b;c>; title="page, two; ready"; rel="prev next"`,
+	}}
+	if got := NextLink(header); got != "https://canvas.test/api/v1/courses?opaque=a,b;c" {
+		t.Fatalf("next link = %q", got)
+	}
+}
+
 func TestRequestReturnsHTTPError(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusForbidden)
