@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -172,42 +173,69 @@ func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[str
 }
 
 func multipartUpload(ctx context.Context, c *Client, endpoint string, params map[string]any, filePath string) ([]byte, error) {
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-	for key, value := range params {
-		if err := writer.WriteField(key, fmt.Sprint(value)); err != nil {
-			return nil, err
-		}
-	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	info, err := file.Stat()
 	if err != nil {
+		_ = file.Close()
 		return nil, err
 	}
-	if _, err := io.Copy(part, file); err != nil {
-		return nil, err
-	}
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
+	boundary, overhead, err := multipartEnvelope(params, filepath.Base(filePath))
 	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if info.Size() > math.MaxInt64-overhead {
+		_ = file.Close()
+		return nil, fmt.Errorf("file is too large to upload")
+	}
+
+	reader, pipeWriter := io.Pipe()
+	writer := multipart.NewWriter(pipeWriter)
+	if err := writer.SetBoundary(boundary); err != nil {
+		_ = file.Close()
+		_ = reader.Close()
+		_ = pipeWriter.Close()
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, reader)
+	if err != nil {
+		_ = file.Close()
+		_ = reader.Close()
+		_ = pipeWriter.Close()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.ContentLength = overhead + info.Size()
+
+	writeDone := make(chan error, 1)
+	go func() {
+		writeErr := writeMultipart(writer, params, filepath.Base(filePath), file)
+		_ = pipeWriter.CloseWithError(writeErr)
+		writeDone <- writeErr
+	}()
+
 	// Canvas file uploads may redirect from external storage back to Canvas. Stop
 	// automatic redirects so the confirmation request can be authenticated.
-	uploadClient := *c.HTTPClient
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	uploadClient := *httpClient
 	uploadClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 	resp, err := uploadClient.Do(req)
+	_ = reader.Close()
+	writeErr := <-writeDone
 	if err != nil {
 		return nil, err
+	}
+	if writeErr != nil && !errors.Is(writeErr, io.ErrClosedPipe) {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("stream upload: %w", writeErr)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
@@ -231,6 +259,55 @@ func multipartUpload(ctx context.Context, c *Client, endpoint string, params map
 		return nil, &HTTPError{StatusCode: resp.StatusCode, Body: data}
 	}
 	return data, nil
+}
+
+type byteCounter int64
+
+func (counter *byteCounter) Write(data []byte) (int, error) {
+	*counter += byteCounter(len(data))
+	return len(data), nil
+}
+
+func multipartEnvelope(params map[string]any, fileName string) (string, int64, error) {
+	var size byteCounter
+	writer := multipart.NewWriter(&size)
+	if err := writeMultipartFields(writer, params); err != nil {
+		return "", 0, err
+	}
+	if _, err := writer.CreateFormFile("file", fileName); err != nil {
+		return "", 0, err
+	}
+	if err := writer.Close(); err != nil {
+		return "", 0, err
+	}
+	return writer.Boundary(), int64(size), nil
+}
+
+func writeMultipart(writer *multipart.Writer, params map[string]any, fileName string, file *os.File) error {
+	if err := writeMultipartFields(writer, params); err != nil {
+		_ = file.Close()
+		return err
+	}
+	part, err := writer.CreateFormFile("file", fileName)
+	if err == nil {
+		_, err = io.Copy(part, file)
+	}
+	if closeErr := writer.Close(); err == nil {
+		err = closeErr
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+func writeMultipartFields(writer *multipart.Writer, params map[string]any) error {
+	for key, value := range params {
+		if err := writer.WriteField(key, fmt.Sprint(value)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // NextLink returns the opaque next-page URL from an RFC 8288 Link header.

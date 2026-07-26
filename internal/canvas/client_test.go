@@ -180,6 +180,60 @@ func TestUploadCompletesMultipartFlow(t *testing.T) {
 	}
 }
 
+func TestMultipartUploadStreamsTheFileAsTheLastPart(t *testing.T) {
+	tmp := t.TempDir()
+	filePath := filepath.Join(tmp, "notes.txt")
+	if err := os.WriteFile(filePath, []byte("streamed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient("https://canvas.test", "secret")
+	client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.ContentLength <= int64(len("streamed")) {
+			t.Fatalf("content length = %d", request.ContentLength)
+		}
+		if _, ok := request.Body.(*io.PipeReader); !ok {
+			t.Fatalf("request body type = %T; want a streaming pipe", request.Body)
+		}
+		multipartReader, err := request.MultipartReader()
+		if err != nil {
+			t.Fatal(err)
+		}
+		var names []string
+		for {
+			part, err := multipartReader.NextPart()
+			if err == io.EOF {
+				break
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			names = append(names, part.FormName())
+			data, err := io.ReadAll(part)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if part.FormName() == "file" && string(data) != "streamed" {
+				t.Fatalf("file data = %q", data)
+			}
+		}
+		if got := strings.Join(names, ","); got != "key,file" {
+			t.Fatalf("multipart fields = %q", got)
+		}
+		response := testResponse(request, http.StatusOK, nil)
+		response.Body = io.NopCloser(strings.NewReader(`{"id":42}`))
+		return response, nil
+	})
+
+	result, err := multipartUpload(context.Background(), client, "https://storage.test/upload", map[string]any{"key": "opaque"}, filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(result) != `{"id":42}` {
+		t.Fatalf("result = %q", result)
+	}
+}
+
 func TestUploadPreservesCanvasIntegerIDs(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "notes.txt")

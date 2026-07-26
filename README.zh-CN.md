@@ -29,6 +29,7 @@ Canvas CLI 可以把日常 Canvas 操作带到终端：查看课程和作业、�
 - 自动跟随 Canvas `Link` header 获取全部分页结果；
 - JSON、YAML 和终端表格输出，成功与错误均有稳定 envelope；
 - Canvas 三阶段文件上传流程，包括带认证的完成确认；
+- 大文件采用流式 multipart 上传，保持内存占用稳定；
 - 所有写操作要求显式 `--confirm`；
 - 每一级命令都提供 `--help`、参数说明和可复制示例。
 

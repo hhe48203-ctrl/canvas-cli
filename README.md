@@ -29,6 +29,7 @@ Use Canvas CLI to bring routine Canvas work into the terminal: inspect courses a
 - Automatic traversal of Canvas pagination through opaque `Link` headers.
 - JSON, YAML, and terminal table output with stable success and error envelopes.
 - Canvas' three-step file upload workflow, including authenticated completion redirects.
+- Streaming multipart uploads with bounded memory use for large course files.
 - Explicit `--confirm` required for write operations.
 - Detailed help and copyable examples at every command level.
 
