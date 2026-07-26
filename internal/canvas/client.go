@@ -125,12 +125,31 @@ func (c *Client) Download(ctx context.Context, path, destination string) (int64,
 		}
 		return 0, &HTTPError{StatusCode: resp.StatusCode, Body: data}
 	}
-	file, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	directory := filepath.Dir(destination)
+	file, err := os.CreateTemp(directory, "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
-	return io.Copy(file, resp.Body)
+	tempPath := file.Name()
+	committed := false
+	defer func() {
+		_ = file.Close()
+		if !committed {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	written, err := io.Copy(file, resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	if err := file.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(tempPath, destination); err != nil {
+		return 0, err
+	}
+	committed = true
+	return written, nil
 }
 
 func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[string]any, error) {

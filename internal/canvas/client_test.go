@@ -3,6 +3,7 @@ package canvas
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -136,6 +137,62 @@ func TestRequestReturnsHTTPError(t *testing.T) {
 	_, err := NewClient(server.URL, "secret").Request(context.Background(), http.MethodGet, "/api/v1/courses", nil, nil, "")
 	if err == nil || !strings.Contains(err.Error(), "HTTP 403") {
 		t.Fatalf("expected HTTP error, got %v", err)
+	}
+}
+
+func TestDownloadDoesNotReplaceDestinationWithPartialContent(t *testing.T) {
+	directory := t.TempDir()
+	destination := filepath.Join(directory, "lecture.pdf")
+	if err := os.WriteFile(destination, []byte("original"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	client := NewClient("https://canvas.test", "secret")
+	client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		response := testResponse(request, http.StatusOK, nil)
+		response.Body = io.NopCloser(io.MultiReader(strings.NewReader("partial"), failingReader{}))
+		return response, nil
+	})
+	if _, err := client.Download(context.Background(), "/api/v1/files/1/download", destination); err == nil {
+		t.Fatal("expected the interrupted download to fail")
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "original" {
+		t.Fatalf("destination = %q", data)
+	}
+	temporary, err := filepath.Glob(filepath.Join(directory, ".lecture.pdf.tmp-*"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(temporary) != 0 {
+		t.Fatalf("temporary files remain: %#v", temporary)
+	}
+}
+
+func TestDownloadAtomicallyReplacesDestination(t *testing.T) {
+	destination := filepath.Join(t.TempDir(), "lecture.pdf")
+	if err := os.WriteFile(destination, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	client := NewClient("https://canvas.test", "secret")
+	client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		response := testResponse(request, http.StatusOK, nil)
+		response.Body = io.NopCloser(strings.NewReader("complete"))
+		return response, nil
+	})
+	written, err := client.Download(context.Background(), "/api/v1/files/1/download", destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(destination)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if written != int64(len("complete")) || string(data) != "complete" {
+		t.Fatalf("written = %d, destination = %q", written, data)
 	}
 }
 
@@ -335,4 +392,10 @@ func testResponse(request *http.Request, status int, header http.Header) *http.R
 		Body:       io.NopCloser(strings.NewReader("")),
 		Request:    request,
 	}
+}
+
+type failingReader struct{}
+
+func (failingReader) Read([]byte) (int, error) {
+	return 0, errors.New("download interrupted")
 }
