@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -54,6 +55,57 @@ func TestRequestMergesEmbeddedAndExplicitQuery(t *testing.T) {
 		url.Values{"explicit": {"ok"}}, nil, "",
 	)
 	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRequestAuthenticatesOnlyTheConfiguredCanvasOrigin(t *testing.T) {
+	tests := []struct {
+		name, target, authorization string
+	}{
+		{"canonical origin", "https://canvas.test:443/api/v1/courses", "Bearer secret"},
+		{"scheme downgrade", "http://canvas.test/api/v1/courses", ""},
+		{"different port", "https://canvas.test:444/api/v1/courses", ""},
+		{"different host", "https://files.test/api/v1/courses", ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := NewClient("https://CANVAS.test", "secret")
+			client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+				if got := request.Header.Get("Authorization"); got != test.authorization {
+					t.Fatalf("authorization = %q; want %q", got, test.authorization)
+				}
+				return testResponse(request, http.StatusOK, nil), nil
+			})
+			if _, err := client.Request(context.Background(), http.MethodGet, test.target, nil, nil, ""); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestRequestStripsAuthorizationOnCrossOriginRedirect(t *testing.T) {
+	client := NewClient("https://canvas.test", "secret")
+	requests := 0
+	client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		switch requests {
+		case 1:
+			if got := request.Header.Get("Authorization"); got != "Bearer secret" {
+				t.Fatalf("initial authorization = %q", got)
+			}
+			return testResponse(request, http.StatusFound, http.Header{"Location": {"http://canvas.test/download"}}), nil
+		case 2:
+			if got := request.Header.Get("Authorization"); got != "" {
+				t.Fatalf("redirect authorization = %q", got)
+			}
+			return testResponse(request, http.StatusOK, nil), nil
+		default:
+			t.Fatalf("unexpected request %d", requests)
+			return nil, nil
+		}
+	})
+	if _, err := client.Request(context.Background(), http.MethodGet, "/api/v1/files/1/download", nil, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -199,5 +251,20 @@ func TestUploadFollowsRedirectWithCanvasAuthentication(t *testing.T) {
 				t.Fatalf("upload result = %#v", data)
 			}
 		})
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (function roundTripFunc) RoundTrip(request *http.Request) (*http.Response, error) {
+	return function(request)
+}
+
+func testResponse(request *http.Request, status int, header http.Header) *http.Response {
+	return &http.Response{
+		StatusCode: status,
+		Header:     header,
+		Body:       io.NopCloser(strings.NewReader("")),
+		Request:    request,
 	}
 }

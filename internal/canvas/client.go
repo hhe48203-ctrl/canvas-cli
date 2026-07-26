@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -59,14 +60,14 @@ func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, qu
 			req.Header.Add(key, value)
 		}
 	}
-	if c.Token != "" && req.URL.Host == mustURLHost(c.BaseURL) {
+	if c.Token != "" && sameOrigin(req.URL, parsedURL(c.BaseURL)) {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return Response{}, err
 	}
@@ -107,10 +108,10 @@ func (c *Client) Download(ctx context.Context, path, destination string) (int64,
 		return 0, err
 	}
 	req.Header.Set("Accept", "*/*")
-	if c.Token != "" && req.URL.Host == mustURLHost(c.BaseURL) {
+	if c.Token != "" && sameOrigin(req.URL, parsedURL(c.BaseURL)) {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -323,9 +324,55 @@ func contentType(path string) string {
 	}
 }
 
-func mustURLHost(raw string) string {
-	u, _ := url.Parse(raw)
-	return u.Host
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	redirectSafeClient := *httpClient
+	previousCheck := redirectSafeClient.CheckRedirect
+	base := parsedURL(c.BaseURL)
+	redirectSafeClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if !sameOrigin(next.URL, base) {
+			next.Header.Del("Authorization")
+		}
+		if previousCheck != nil {
+			return previousCheck(next, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return redirectSafeClient.Do(req)
+}
+
+func parsedURL(raw string) *url.URL {
+	parsed, _ := url.Parse(raw)
+	return parsed
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil ||
+		!strings.EqualFold(left.Scheme, right.Scheme) ||
+		!strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+	return originPort(left) == originPort(right)
+}
+
+func originPort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 type HTTPError struct {
