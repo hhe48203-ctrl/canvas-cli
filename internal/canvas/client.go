@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -388,17 +389,15 @@ func splitOutside(value string, separator byte, trackAngles bool) []string {
 }
 
 func contentType(path string) string {
-	ext := filepath.Ext(path)
-	switch ext {
-	case ".pdf":
-		return "application/pdf"
-	case ".doc", ".docx":
-		return "application/msword"
-	case ".txt":
-		return "text/plain"
-	default:
+	detected := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	if detected == "" {
 		return "application/octet-stream"
 	}
+	mediaType, _, err := mime.ParseMediaType(detected)
+	if err != nil {
+		return detected
+	}
+	return mediaType
 }
 
 func (c *Client) do(req *http.Request) (*http.Response, error) {

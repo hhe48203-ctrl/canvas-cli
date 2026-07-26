@@ -263,6 +263,20 @@ func TestUploadPreservesCanvasIntegerIDs(t *testing.T) {
 	}
 }
 
+func TestUploadContentTypeUsesStandardMIMETypes(t *testing.T) {
+	tests := map[string]string{
+		"essay.DOCX": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"image.PNG":  "image/png",
+		"notes.txt":  "text/plain",
+		"data.abcx":  "application/octet-stream",
+	}
+	for path, expected := range tests {
+		if got := contentType(path); got != expected {
+			t.Errorf("contentType(%q) = %q; want %q", path, got, expected)
+		}
+	}
+}
+
 func TestUploadFollowsRedirectWithCanvasAuthentication(t *testing.T) {
 	for _, status := range []int{http.StatusFound, http.StatusCreated} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
