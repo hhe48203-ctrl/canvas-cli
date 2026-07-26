@@ -1,4 +1,4 @@
-# Canvas CLI for University Courses
+# Canvas CLI — Canvas LMS for AI Agents
 
 English | [简体中文](README.zh-CN.md)
 
@@ -6,313 +6,172 @@ English | [简体中文](README.zh-CN.md)
 [![Go version](https://img.shields.io/github/go-mod/go-version/hhe48203-ctrl/canvas-cli)](https://github.com/hhe48203-ctrl/canvas-cli/blob/main/go.mod)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-A command-line client for Canvas LMS in university and higher-education courses, built for students, instructors, teaching staff, and AI agents. It provides high-level course workflows, stable structured output, and a searchable catalog of Canvas REST API operations.
+Canvas CLI gives AI agents a controlled interface to Canvas LMS. Agents can
+inspect courses and assignments, download course files, prepare submissions,
+work through Classic Quizzes with user-provided answers, and access more than
+1,100 Canvas REST API operations.
 
-> [!IMPORTANT]
-> This is an early-stage, independent community project for university course use. It is not developed, endorsed, or supported by Instructure. Before submitting an assignment, starting or completing a quiz, or performing another write operation, verify the target Canvas LMS instance, course, and parameters.
+Commands return structured JSON or YAML. Read operations run directly; writes
+such as uploads and submissions require `--confirm`, so an agent can show the
+exact action before executing it.
 
-Canvas CLI targets academic workflows in university Canvas LMS courses and is designed for two kinds of users:
+## Install
 
-- students, instructors, and teaching staff who want short commands for courses, assignments, files, and quizzes;
-- AI agents that need predictable JSON/YAML output, structured errors, explicit write confirmation, and access to less common Canvas endpoints.
+Give the repository URL to an agent:
 
-The authoritative Canvas API documentation is available from the [Instructure Developer Documentation](https://developerdocs.instructure.com/services/canvas). Canvas CLI authenticates with an OAuth2 access token in the `Authorization: Bearer <token>` header.
+```text
+Install Canvas CLI from https://github.com/hhe48203-ctrl/canvas-cli.
+Use the Go version declared by the repository, install the canvas binary in a
+user-writable directory on PATH, and verify it with canvas --help. Do not use
+sudo or change my shell configuration without asking. I will set the Canvas
+token myself; do not ask me to paste it into chat.
+```
 
-## What can you use it for?
-
-Use Canvas CLI to bring routine Canvas work into the terminal: inspect courses and assignments, download course files, submit work, handle Classic Quiz workflows, or reach less-common endpoints through the searchable API catalog. Compared with repeatedly navigating the web interface, commands are easy to copy, script, combine with tools such as `jq`, and reuse across local terminals, automation, and AI agents. You can also package common commands, safety rules, and institution-specific procedures as a skill for Codex, Claude Code, or another agent: the agent reads structured data and prepares an action, while `--confirm` keeps write operations under explicit user control.
-
-## Highlights
-
-- High-level commands for university courses, assignments, course files, and Classic Quizzes.
-- More than 1,100 generated Canvas REST API operations that can be searched, described, and invoked.
-- Automatic traversal of Canvas pagination through opaque `Link` headers.
-- JSON, YAML, and terminal table output with stable success and error envelopes.
-- Canvas' three-step file upload workflow, including authenticated completion redirects.
-- Streaming multipart uploads with bounded memory use for large course files.
-- Explicit `--confirm` required for write operations.
-- Detailed help and copyable examples at every command level.
-
-## Installation
-
-Canvas CLI requires Go 1.26 or newer.
+Or install it manually:
 
 ```bash
 git clone https://github.com/hhe48203-ctrl/canvas-cli.git
 cd canvas-cli
 go build -o canvas .
-sudo install -m 0755 canvas /usr/local/bin/canvas
-```
-
-To install without writing to a system directory:
-
-```bash
 mkdir -p "$HOME/.local/bin"
-go build -o "$HOME/.local/bin/canvas" .
-canvas --help
+install -m 0755 canvas "$HOME/.local/bin/canvas"
 ```
 
-During development, run the CLI directly:
+Canvas CLI requires the Go version declared in [`go.mod`](go.mod).
+
+## Configure
+
+Create a Canvas access token in **Account → Settings → Approved Integrations**,
+then keep it in an environment variable:
 
 ```bash
-go run . --help
-```
+export CANVAS_BASE_URL="https://canvas.example.edu"
+export CANVAS_API_TOKEN="your-token"
 
-## Configuration
-
-Set the Canvas instance URL and access token:
-
-```bash
-export CANVAS_BASE_URL="https://school.instructure.com"
-export CANVAS_API_TOKEN="your-access-token"
-```
-
-The base URL can also be saved locally:
-
-```bash
-canvas auth set-url https://school.instructure.com
-```
-
-The access token is read only from `CANVAS_API_TOKEN`; it is not written to the configuration file. Treat the token like a password: grant the minimum required permissions, never put it in command arguments, URLs, logs, or commits, and revoke it immediately if it is exposed.
-
-Verify authentication:
-
-```bash
 canvas auth status
-canvas me
+canvas auth set-url "https://canvas.example.edu"
 ```
 
-## Common workflows
+`CANVAS_API_TOKEN` is never written by the CLI. Do not put it in prompts, source
+files, command arguments, or commits.
 
-### Courses and assignments
+## Agent Skill
 
-```bash
-canvas courses list
-canvas courses list --all-pages
-canvas courses list \
-  --query enrollment_type=student \
-  --query 'include[]=term'
-canvas courses show COURSE_ID
+Add a `SKILL.md` like the following to teach an agent the safe workflow:
 
-canvas assignments list COURSE_ID --all-pages
-canvas assignments show COURSE_ID ASSIGNMENT_ID
+```markdown
+---
+name: canvas-lms
+description: Use Canvas LMS through the canvas CLI for courses, assignments, files, submissions, and quizzes.
+---
+
+# Canvas LMS
+
+Use `canvas` instead of browser automation when working with Canvas.
+
+Rules:
+- Run `canvas auth status` before the first request.
+- Prefer `--json`; use returned IDs instead of guessing them.
+- Read assignment or quiz details before preparing an answer.
+- Show the target and payload before any write.
+- Add `--confirm` only after the user explicitly approves the write.
+- Never request or display `CANVAS_API_TOKEN`.
+
+Useful reads:
+    canvas courses list --all-pages --json
+    canvas assignments list COURSE_ID --all-pages --json
+    canvas assignments show COURSE_ID ASSIGNMENT_ID --json
+    canvas files list COURSE_ID --all-pages --json
+
+Submission after approval:
+    canvas assignments submit COURSE_ID ASSIGNMENT_ID \
+      --file answer.pdf --confirm --json
+
+For other endpoints:
+    canvas api search KEYWORD
+    canvas api describe OPERATION_ID
+    canvas api invoke OPERATION_ID --json
 ```
 
-### Files
+Example request:
+
+> Find my active biology course, list assignments due this week, and prepare the
+> next submission. Show me the course, assignment, and files before submitting.
+
+## Common commands
 
 ```bash
-canvas files list COURSE_ID
+# Courses and assignments
+canvas courses list --all-pages --json
+canvas assignments list COURSE_ID --all-pages --json
+canvas assignments show COURSE_ID ASSIGNMENT_ID --json
+
+# Files
+canvas files list COURSE_ID --all-pages --json
 canvas files download FILE_ID --destination ./lecture.pdf
-canvas files upload COURSE_ID ./notes.pdf --confirm
-```
 
-### Assignment submissions
-
-Every submission requires explicit confirmation:
-
-```bash
+# Text, URL, or multi-file submissions
 canvas assignments submit COURSE_ID ASSIGNMENT_ID \
-  --file answer.pdf --file appendix.pdf --confirm
-
+  --text "My response" --confirm --json
 canvas assignments submit COURSE_ID ASSIGNMENT_ID \
-  --text '<p>Assignment content</p>' --confirm
-
+  --url "https://example.com/work" --confirm --json
 canvas assignments submit COURSE_ID ASSIGNMENT_ID \
-  --url https://example.com/report --confirm
-```
+  --file answer.pdf --file appendix.pdf --confirm --json
 
-Repeat `--file` to attach multiple files. File submissions first complete the Canvas upload workflow for each file and then submit the returned file IDs to the assignment. See the official [Submissions API](https://developerdocs.instructure.com/services/canvas/resources/submissions) and [File Upload documentation](https://developerdocs.instructure.com/services/canvas/basics/file.file_uploads).
-
-### Classic Quizzes
-
-```bash
-canvas quizzes list COURSE_ID
-canvas quizzes show COURSE_ID QUIZ_ID
-canvas quizzes start COURSE_ID QUIZ_ID --confirm
-canvas quizzes questions SUBMISSION_ID
+# Classic Quizzes
+canvas quizzes list COURSE_ID --all-pages --json
+canvas quizzes start COURSE_ID QUIZ_ID --confirm --json
+canvas quizzes questions SUBMISSION_ID --all-pages --json
 canvas quizzes answer SUBMISSION_ID \
-  --answers-file answers.json --confirm
+  --answers-file answers.json --confirm --json
 canvas quizzes complete COURSE_ID QUIZ_ID SUBMISSION_ID \
-  --attempt 1 --validation-token TOKEN --access-code CODE --confirm
+  --attempt ATTEMPT --validation-token TOKEN --confirm --json
 ```
 
-Example answer file:
+Use `canvas --help` or `canvas <command> --help` for all flags and examples.
 
-```json
-{
-  "attempt": 1,
-  "validation_token": "token-from-start-response",
-  "quiz_questions": [
-    {"id": 101, "answer": "A"},
-    {"id": 102, "answer": ["choice-1", "choice-3"]}
-  ]
-}
-```
+## Full Canvas API
 
-These commands target Classic Quizzes. New Quizzes is a separate Canvas service with its own API lifecycle.
-
-## Discovering and invoking the REST API
-
-The bundled catalog covers the Canvas LMS REST endpoints present in the official documentation when the catalog was generated. Search the catalog, inspect an operation, and then invoke it:
+The generated catalog covers more than 1,100 operations from the official
+Canvas REST API documentation:
 
 ```bash
 canvas api search modules
 canvas api describe context_modules_api.create
-canvas api list --json
-```
-
-High-level aliases provide stable operation IDs for common calls:
-
-```bash
-canvas api describe courses.list
 canvas api invoke courses.list \
-  --query enrollment_type=student \
-  --all-pages
+  --query enrollment_type=student --all-pages --json
+canvas api invoke METHOD /api/v1/example \
+  --query key=value --body request.json --confirm --json
 ```
 
-Any endpoint can also be called with an explicit method and path:
+`api describe` shows the method, path, and parameters. `api invoke` accepts
+repeatable `--path`, `--query`, `--header`, and `--form` values, plus `--body`
+and `--all-pages`; write methods require `--confirm`.
 
-```bash
-canvas api invoke GET /api/v1/courses
+The authoritative API reference is the
+[Instructure Developer Documentation](https://developerdocs.instructure.com/services/canvas).
 
-canvas api invoke GET /api/v1/courses/{course_id} \
-  --path course_id=123
+## Output and safety
 
-canvas api invoke GET /api/v1/calendar_events \
-  --query 'context_codes[]=course_123' \
-  --query 'context_codes[]=course_456'
-```
-
-Canvas commonly accepts nested form fields for POST and PUT requests:
-
-```bash
-canvas api invoke POST /api/v1/courses/123/pages \
-  --form 'wiki_page[title]=Overview' \
-  --form 'wiki_page[body]=<p>Hello</p>' \
-  --confirm
-```
-
-Use a raw body file or stdin for JSON and other encoded content:
-
-```bash
-canvas api invoke PUT /api/v1/courses/123 \
-  --body request.json \
-  --content-type application/json \
-  --confirm
-
-printf '%s' '{"query":"{ course(id: \"123\") { name } }"}' | \
-  canvas api invoke POST /api/graphql \
-  --body - --content-type application/json --confirm
-```
-
-Generic invocation flags:
-
-- `--path name=value` replaces an operation path placeholder.
-- `--query name=value` adds a query parameter and can be repeated for arrays.
-- `--form name=value` adds a bracket-style Canvas form field.
-- `--body FILE` sends a raw body; `--body -` reads stdin.
-- `--header name=value` adds a request header.
-- `--all-pages` follows Canvas `Link` headers and combines JSON-array or compound-document pages.
-- `--include-headers` includes the HTTP status, response headers, page count, and data.
-- `--confirm` authorizes a POST, PUT, PATCH, or DELETE request.
-
-## Help
-
-Every command includes purpose, argument, flag, safety, and example information:
-
-```bash
-canvas --help
-canvas api --help
-canvas api invoke --help
-canvas api search modules
-canvas api describe context_modules_api.create
-canvas assignments submit --help
-canvas quizzes answer --help
-canvas files download --help
-```
-
-In terminal mode, `api describe` shows parameter location, requirement status, type, default or allowed values, description, request-body content types, authentication scope, response metadata, and a runnable invocation skeleton. Use `--json` or `--yaml` for the same information in a structured form.
-
-## Output
-
-```bash
-canvas courses list --output table
-canvas courses list --json
-canvas courses list --yaml
-```
-
-Behavior:
-
-- an interactive terminal defaults to table output;
-- a pipe or redirect defaults to JSON;
-- `--json`, `--yaml`, or `--output` explicitly selects the format;
-- successful results use an `{ "ok": true, "data": ... }` envelope;
-- JSON/YAML errors use an `{ "ok": false, "error": ... }` envelope on stderr.
-
-Example agent pipeline:
-
-```bash
-canvas courses list --all-pages --json | jq '.data[] | {id, name}'
-```
-
-## API catalog generation
-
-The checked-in operation catalog is generated from Instructure's official online REST API documentation:
-
-```bash
-scripts/update-api-catalog.sh
-go test ./...
-```
-
-The script converts `all_resources.html` to OpenAPI metadata and then generates `internal/api/generated.go`. If a Canvas source checkout has produced an official OpenAPI document with `bundle exec rake doc:openapi`, use it directly:
-
-```bash
-scripts/generate-openapi.sh path/to/canvas.openapi.yaml
-go test ./...
-```
-
-The OpenAPI generator retains operation groups, descriptions, path/query/body parameters, required status, types, enums, defaults, content types, responses, and authentication scopes. It also resolves path-level parameters and component references.
-
-“Complete” refers to the Canvas LMS REST API snapshot used to generate the catalog. Canvas Studio, the Data Access Platform, New Quizzes, and other separately versioned products use different base URLs, authentication rules, or lifecycles.
+- `--json` and `--yaml` return stable success or error envelopes.
+- `--all-pages` follows Canvas pagination links without reconstructing them.
+- File uploads stream data and complete Canvas' multi-step upload flow.
+- Mutating operations require `--confirm`.
+- Quiz answers must come from the user; the CLI does not solve or guess them.
+- Canvas permissions and institutional policies still apply.
 
 ## Development
 
 ```bash
-gofmt -w .
 go test ./...
-go vet ./...
-go build -o canvas .
-go run . api invoke --help
+go build ./...
+scripts/update-api-catalog.sh
 ```
 
-Tests use local `httptest` servers. They do not connect to a real Canvas instance, submit assignments, or complete quizzes.
-
-Repository layout:
-
-```text
-.
-├── cmd/                 # Cobra commands and high-level workflows
-├── internal/api/        # Generated operation catalog and metadata
-├── internal/canvas/     # HTTP, auth, pagination, downloads, and uploads
-├── internal/config/     # Base URL and token configuration
-├── internal/output/     # JSON, YAML, table, and envelope rendering
-├── scripts/             # Catalog generation scripts
-├── tools/               # Documentation and OpenAPI generators
-└── .github/workflows/   # Continuous integration
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution and catalog-update workflow. Never include real access tokens, student information, course content, or institution-private data in commits, fixtures, issues, or logs.
-
-## Scope and safety boundaries
-
-- The project targets Canvas LMS deployments used for university and higher-education courses.
-- API access remains limited by the authenticated user's Canvas role, token scopes, and course permissions.
-- The CLI does not bypass access codes, IP restrictions, time limits, attempt limits, or other Canvas controls.
-- Quiz commands only transmit answers explicitly supplied by the user or calling agent; they do not generate or guess answers.
-- High-level commands cover common workflows; the generated catalog and raw invoker provide broader REST API reach.
+The script refreshes the embedded catalog from Instructure's official API
+documentation. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution
+workflow.
 
 ## License
 
-Canvas CLI is released under the [MIT License](LICENSE).
-
-Canvas, Canvas LMS, and Instructure are trademarks of their respective owners. This project is not affiliated with or endorsed by Instructure.
+[MIT](LICENSE)
