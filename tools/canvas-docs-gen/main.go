@@ -221,6 +221,9 @@ func normalizeType(value string) string {
 		return "array"
 	case strings.Contains(lower, "integer"):
 		return "integer"
+	case strings.Contains(lower, "number") || strings.Contains(lower, "numeric") ||
+		strings.Contains(lower, "float") || strings.Contains(lower, "decimal"):
+		return "number"
 	case strings.Contains(lower, "boolean"):
 		return "boolean"
 	case strings.Contains(lower, "datetime") || strings.Contains(lower, "date"):

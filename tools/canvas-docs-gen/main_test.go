@@ -31,3 +31,14 @@ func TestParseDefaultRejectsProseDescriptions(t *testing.T) {
 		}
 	}
 }
+
+func TestNormalizeTypePreservesCanvasNumericTypes(t *testing.T) {
+	for _, input := range []string{"number", "Numeric", "Float", "Decimal"} {
+		if got := normalizeType(input); got != "number" {
+			t.Errorf("normalizeType(%q) = %q; want number", input, got)
+		}
+	}
+	if got := normalizeType("Positive Integer"); got != "integer" {
+		t.Errorf("normalizeType(Positive Integer) = %q; want integer", got)
+	}
+}
