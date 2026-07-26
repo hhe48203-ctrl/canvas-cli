@@ -9,6 +9,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -74,7 +75,9 @@ var (
 	pathParamRE   = regexp.MustCompile(`[:*]([A-Za-z0-9_]+)`)
 	placeholderRE = regexp.MustCompile(`\{([A-Za-z0-9_]+)\}`)
 	enumRE        = regexp.MustCompile(`(?s)<code class=enum>(.*?)</code>`)
-	defaultRE     = regexp.MustCompile(`(?i)defaults? to\s+['+]*([^.,;\s<]+)`)
+	defaultRE     = regexp.MustCompile(`(?i)defaults?(?:\s+to|\s*:)\s+(.+)`)
+	quotedValueRE = regexp.MustCompile(`^(?:"([^"]+)"|'([^']+)'|“([^”]+)”|‘([^’]+)’)`)
+	firstTokenRE  = regexp.MustCompile(`^([^\s.,;<]+)(.*)$`)
 )
 
 func main() {
@@ -177,9 +180,10 @@ func parseParameters(block string) []parsedParameter {
 		if strings.HasSuffix(name, "[]") {
 			typeName = "array"
 		}
+		enum := parseEnum(cells[3][1])
 		result = append(result, parsedParameter{
 			name: name, required: strings.Contains(strings.ToLower(cells[1][1]), "required"),
-			typeName: typeName, description: clean(cells[3][1]), enum: parseEnum(cells[3][1]), defaultValue: parseDefault(cells[3][1]),
+			typeName: typeName, description: clean(cells[3][1]), enum: enum, defaultValue: parseDefault(cells[3][1], typeName, enum),
 		})
 	}
 	return result
@@ -237,12 +241,46 @@ func parseEnum(value string) []string {
 	return result
 }
 
-func parseDefault(value string) string {
+func parseDefault(value, typeName string, enum []string) string {
 	match := defaultRE.FindStringSubmatch(clean(value))
 	if match == nil {
 		return ""
 	}
-	return strings.Trim(match[1], `"'++`)
+	remainder := strings.TrimSpace(match[1])
+	if quoted := quotedValueRE.FindStringSubmatch(remainder); quoted != nil {
+		for _, candidate := range quoted[1:] {
+			if candidate != "" {
+				return candidate
+			}
+		}
+	}
+	token := firstTokenRE.FindStringSubmatch(remainder)
+	if token == nil {
+		return ""
+	}
+	candidate := strings.Trim(token[1], `"'++`)
+	for _, allowed := range enum {
+		if strings.EqualFold(candidate, allowed) {
+			return candidate
+		}
+	}
+	if candidate == "true" || candidate == "false" || candidate == "null" {
+		return candidate
+	}
+	if _, err := strconv.ParseFloat(candidate, 64); err == nil {
+		trailing := strings.TrimSpace(token[2])
+		if typeName == "string" && strings.HasPrefix(strings.ToLower(trailing), "days ") {
+			if end := strings.IndexByte(trailing, '.'); end >= 0 {
+				trailing = trailing[:end]
+			}
+			return candidate + " " + strings.TrimSpace(trailing)
+		}
+		return candidate
+	}
+	if strings.TrimSpace(token[2]) == "" || strings.Contains(".,;", string(strings.TrimSpace(token[2])[0])) {
+		return candidate
+	}
+	return ""
 }
 
 func parseDescription(block string) string {
