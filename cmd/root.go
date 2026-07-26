@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -213,7 +214,9 @@ func decodeJSON(data []byte) any {
 		return map[string]any{}
 	}
 	var value any
-	if json.Unmarshal(data, &value) == nil {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if decoder.Decode(&value) == nil {
 		return value
 	}
 	return string(data)

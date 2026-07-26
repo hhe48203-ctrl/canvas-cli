@@ -2,6 +2,8 @@ package canvas
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -112,8 +114,37 @@ func TestUploadCompletesMultipartFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if data["id"] != float64(42) {
+	if fmt.Sprint(data["id"]) != "42" {
 		t.Fatalf("upload result = %#v", data)
+	}
+}
+
+func TestUploadPreservesCanvasIntegerIDs(t *testing.T) {
+	tmp := t.TempDir()
+	filePath := filepath.Join(tmp, "notes.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	server := httptest.NewServer(nil)
+	defer server.Close()
+	server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/v1/courses/1/files":
+			_, _ = w.Write([]byte(`{"upload_url":"` + server.URL + `/upload","upload_params":{}}`))
+		case "/upload":
+			_, _ = w.Write([]byte(`{"id":9007199254740993}`))
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	data, err := NewClient(server.URL, "secret").Upload(context.Background(), "/api/v1/courses/1/files", filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if data["id"] != json.Number("9007199254740993") {
+		t.Fatalf("upload id = %#v; want an exact JSON number", data["id"])
 	}
 }
 
@@ -155,7 +186,7 @@ func TestUploadFollowsRedirectWithCanvasAuthentication(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if data["id"] != float64(42) {
+			if fmt.Sprint(data["id"]) != "42" {
 				t.Fatalf("upload result = %#v", data)
 			}
 		})

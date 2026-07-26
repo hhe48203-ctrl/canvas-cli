@@ -160,3 +160,13 @@ func TestQuizArrayAnswerUsesRepeatedBracketFields(t *testing.T) {
 		t.Fatalf("encoded answers = %#v", values)
 	}
 }
+
+func TestDecodeJSONPreservesCanvasIntegerIDs(t *testing.T) {
+	value, ok := decodeJSON([]byte(`{"id":9007199254740993}`)).(map[string]any)
+	if !ok {
+		t.Fatal("decoded response is not an object")
+	}
+	if got := value["id"]; got != json.Number("9007199254740993") {
+		t.Fatalf("id = %#v; want an exact JSON number", got)
+	}
+}

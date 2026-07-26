@@ -161,7 +161,9 @@ func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[str
 	}
 	var payload map[string]any
 	if len(result) > 0 {
-		if err := json.Unmarshal(result, &payload); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(result))
+		decoder.UseNumber()
+		if err := decoder.Decode(&payload); err != nil {
 			return nil, fmt.Errorf("Canvas upload returned invalid JSON: %w", err)
 		}
 	}
