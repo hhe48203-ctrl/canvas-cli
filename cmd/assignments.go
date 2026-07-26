@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	assignmentFile string
-	assignmentText string
-	assignmentURL  string
-	comment        string
+	assignmentFiles []string
+	assignmentText  string
+	assignmentURL   string
+	comment         string
 )
 
 func newAssignmentsCommand() *cobra.Command {
@@ -35,15 +35,15 @@ func newAssignmentsCommand() *cobra.Command {
 func newSubmitAssignmentCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "submit COURSE_ID ASSIGNMENT_ID",
-		Short: "Submit text, a URL, or a file to an assignment",
-		Long:  "Submit exactly one of --file, --text, or --url. File submissions first complete Canvas' multi-stage upload workflow. This write requires --confirm.",
-		Example: `  canvas assignments submit 123 456 --file ./homework.pdf --confirm
+		Short: "Submit text, a URL, or files to an assignment",
+		Long:  "Submit exactly one mode: one or more --file flags, --text, or --url. File submissions first complete Canvas' multi-stage upload workflow. This write requires --confirm.",
+		Example: `  canvas assignments submit 123 456 --file ./answer.pdf --file ./appendix.pdf --confirm
   canvas assignments submit 123 456 --text '<p>My answer</p>' --confirm
   canvas assignments submit 123 456 --url https://example.com/report --comment 'Final version' --confirm`,
 		Args: cobra.ExactArgs(2),
 		PreRunE: func(cmd *cobra.Command, args []string) error {
 			count := 0
-			if assignmentFile != "" {
+			if len(assignmentFiles) > 0 {
 				count++
 			}
 			if assignmentText != "" {
@@ -67,18 +67,18 @@ func newSubmitAssignmentCommand() *cobra.Command {
 			if comment != "" {
 				values.Set("comment[text_comment]", comment)
 			}
-			if assignmentFile != "" {
+			if len(assignmentFiles) > 0 {
 				endpoint := fmt.Sprintf("/api/v1/courses/%s/assignments/%s/submissions/self/files", courseID, assignmentID)
-				fileData, uploadErr := c.Upload(ctx, endpoint, assignmentFile)
+				fileIDs, uploadErr := collectUploadedFileIDs(assignmentFiles, func(filePath string) (map[string]any, error) {
+					return c.Upload(ctx, endpoint, filePath)
+				})
 				if uploadErr != nil {
 					return uploadErr
 				}
-				fileID := extractID(fileData)
-				if fileID == "" {
-					return fmt.Errorf("Canvas upload did not return a file id")
-				}
 				values.Set("submission[submission_type]", "online_upload")
-				values.Set("submission[file_ids][]", fileID)
+				for _, fileID := range fileIDs {
+					values.Add("submission[file_ids][]", fileID)
+				}
 			} else if assignmentText != "" {
 				values.Set("submission[submission_type]", "online_text_entry")
 				values.Set("submission[body]", assignmentText)
@@ -93,12 +93,28 @@ func newSubmitAssignmentCommand() *cobra.Command {
 			return emit(decodeJSON(resp.Body))
 		},
 	}
-	cmd.Flags().StringVar(&assignmentFile, "file", "", "File to upload")
+	cmd.Flags().StringArrayVar(&assignmentFiles, "file", nil, "File to upload; repeat to submit multiple files")
 	cmd.Flags().StringVar(&assignmentText, "text", "", "HTML/text entry")
 	cmd.Flags().StringVar(&assignmentURL, "url", "", "Submission URL")
 	cmd.Flags().StringVar(&comment, "comment", "", "Optional submission comment")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Confirm this write operation")
 	return cmd
+}
+
+func collectUploadedFileIDs(filePaths []string, upload func(string) (map[string]any, error)) ([]string, error) {
+	fileIDs := make([]string, 0, len(filePaths))
+	for _, filePath := range filePaths {
+		fileData, err := upload(filePath)
+		if err != nil {
+			return nil, fmt.Errorf("upload %q: %w", filePath, err)
+		}
+		fileID := extractID(fileData)
+		if fileID == "" {
+			return nil, fmt.Errorf("upload %q: Canvas did not return a file id", filePath)
+		}
+		fileIDs = append(fileIDs, fileID)
+	}
+	return fileIDs, nil
 }
 
 func extractID(data map[string]any) string {

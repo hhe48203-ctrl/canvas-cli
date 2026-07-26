@@ -110,7 +110,7 @@ canvas files upload COURSE_ID ./notes.pdf --confirm
 
 ```bash
 canvas assignments submit COURSE_ID ASSIGNMENT_ID \
-  --file homework.pdf --confirm
+  --file answer.pdf --file appendix.pdf --confirm
 
 canvas assignments submit COURSE_ID ASSIGNMENT_ID \
   --text "作业内容" --confirm
@@ -119,7 +119,7 @@ canvas assignments submit COURSE_ID ASSIGNMENT_ID \
   --url https://example.com/report --confirm
 ```
 
-文件型作业会先执行 Canvas 的上传流程，再把返回的 file ID 提交给作业。相关限制和参数见 [Submissions API](https://developerdocs.instructure.com/services/canvas/resources/submissions) 与 [File Uploads](https://developerdocs.instructure.com/services/canvas/basics/file.file_uploads)。
+可重复使用 `--file` 一次提交多个文件。文件型作业会先为每个文件执行 Canvas 的上传流程，再把返回的 file ID 一并提交给作业。相关限制和参数见 [Submissions API](https://developerdocs.instructure.com/services/canvas/resources/submissions) 与 [File Uploads](https://developerdocs.instructure.com/services/canvas/basics/file.file_uploads)。
 
 ### Quiz
 

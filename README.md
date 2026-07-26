@@ -111,7 +111,7 @@ Every submission requires explicit confirmation:
 
 ```bash
 canvas assignments submit COURSE_ID ASSIGNMENT_ID \
-  --file homework.pdf --confirm
+  --file answer.pdf --file appendix.pdf --confirm
 
 canvas assignments submit COURSE_ID ASSIGNMENT_ID \
   --text '<p>Assignment content</p>' --confirm
@@ -120,7 +120,7 @@ canvas assignments submit COURSE_ID ASSIGNMENT_ID \
   --url https://example.com/report --confirm
 ```
 
-File submissions first complete the Canvas upload workflow and then submit the returned file ID to the assignment. See the official [Submissions API](https://developerdocs.instructure.com/services/canvas/resources/submissions) and [File Upload documentation](https://developerdocs.instructure.com/services/canvas/basics/file.file_uploads).
+Repeat `--file` to attach multiple files. File submissions first complete the Canvas upload workflow for each file and then submit the returned file IDs to the assignment. See the official [Submissions API](https://developerdocs.instructure.com/services/canvas/resources/submissions) and [File Upload documentation](https://developerdocs.instructure.com/services/canvas/basics/file.file_uploads).
 
 ### Classic Quizzes
 

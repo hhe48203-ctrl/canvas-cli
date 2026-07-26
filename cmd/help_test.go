@@ -227,3 +227,17 @@ func TestQuizCompletionRequiresOfficialSessionFields(t *testing.T) {
 		})
 	}
 }
+
+func TestCollectUploadedFileIDsSupportsMultipleAssignmentFiles(t *testing.T) {
+	uploaded := []string{}
+	ids, err := collectUploadedFileIDs([]string{"part-1.pdf", "part-2.pdf"}, func(path string) (map[string]any, error) {
+		uploaded = append(uploaded, path)
+		return map[string]any{"id": len(uploaded)}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(uploaded, ",") != "part-1.pdf,part-2.pdf" || strings.Join(ids, ",") != "1,2" {
+		t.Fatalf("uploaded = %#v, ids = %#v", uploaded, ids)
+	}
+}
