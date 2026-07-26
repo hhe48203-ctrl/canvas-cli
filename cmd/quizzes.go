@@ -179,21 +179,23 @@ func parseQuizAnswers(data []byte) (map[string]any, error) {
 func newCompleteQuizCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "complete COURSE_ID QUIZ_ID SUBMISSION_ID", Short: "Complete and submit a quiz", Args: cobra.ExactArgs(3),
-		Long: "Complete an active Classic Quiz submission. This is irreversible and requires --confirm.",
+		Long: "Complete an active Classic Quiz submission using the latest attempt and its validation token. This is irreversible and requires --confirm.",
 		Example: `  canvas quizzes complete 123 456 789 \
     --attempt 1 --validation-token TOKEN --confirm`,
-		PreRunE: func(cmd *cobra.Command, args []string) error { return requireConfirm() },
+		PreRunE: func(cmd *cobra.Command, args []string) error {
+			if _, err := quizSessionValues(attempt, validation, accessCode); err != nil {
+				return err
+			}
+			return requireConfirm()
+		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, c, err := contextWithClient()
 			if err != nil {
 				return err
 			}
-			values := url.Values{}
-			if attempt > 0 {
-				values.Set("attempt", fmt.Sprint(attempt))
-			}
-			if validation != "" {
-				values.Set("validation_token", validation)
+			values, err := quizSessionValues(attempt, validation, accessCode)
+			if err != nil {
+				return err
 			}
 			resp, err := c.Form(ctx, http.MethodPost, fmt.Sprintf("/api/v1/courses/%s/quizzes/%s/submissions/%s/complete", url.PathEscape(args[0]), url.PathEscape(args[1]), url.PathEscape(args[2])), values)
 			if err != nil {
@@ -204,6 +206,24 @@ func newCompleteQuizCommand() *cobra.Command {
 	}
 	cmd.Flags().IntVar(&attempt, "attempt", 0, "Latest quiz attempt number")
 	cmd.Flags().StringVar(&validation, "validation-token", "", "Quiz submission validation token")
+	cmd.Flags().StringVar(&accessCode, "access-code", "", "Quiz access code, if required")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Confirm this irreversible write operation")
 	return cmd
+}
+
+func quizSessionValues(attemptNumber int, validationToken, code string) (url.Values, error) {
+	if attemptNumber < 1 {
+		return nil, fmt.Errorf("--attempt must be a positive integer")
+	}
+	if strings.TrimSpace(validationToken) == "" {
+		return nil, fmt.Errorf("--validation-token is required")
+	}
+	values := url.Values{
+		"attempt":          {strconv.Itoa(attemptNumber)},
+		"validation_token": {validationToken},
+	}
+	if code != "" {
+		values.Set("access_code", code)
+	}
+	return values, nil
 }

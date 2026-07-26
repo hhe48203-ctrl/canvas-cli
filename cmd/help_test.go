@@ -197,3 +197,33 @@ func TestParseQuizAnswersRequiresSessionCredentials(t *testing.T) {
 		})
 	}
 }
+
+func TestQuizCompletionSessionValues(t *testing.T) {
+	values, err := quizSessionValues(2, "validation", "access")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values.Get("attempt") != "2" || values.Get("validation_token") != "validation" || values.Get("access_code") != "access" {
+		t.Fatalf("completion form = %#v", values)
+	}
+}
+
+func TestQuizCompletionRequiresOfficialSessionFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		attempt int
+		token   string
+		want    string
+	}{
+		{name: "attempt", attempt: 0, token: "validation", want: "--attempt"},
+		{name: "validation token", attempt: 1, token: " ", want: "--validation-token"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := quizSessionValues(test.attempt, test.token, "")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v; want text %q", err, test.want)
+			}
+		})
+	}
+}

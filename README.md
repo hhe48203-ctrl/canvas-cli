@@ -132,7 +132,7 @@ canvas quizzes questions SUBMISSION_ID
 canvas quizzes answer SUBMISSION_ID \
   --answers-file answers.json --confirm
 canvas quizzes complete COURSE_ID QUIZ_ID SUBMISSION_ID \
-  --attempt 1 --validation-token TOKEN --confirm
+  --attempt 1 --validation-token TOKEN --access-code CODE --confirm
 ```
 
 Example answer file:
