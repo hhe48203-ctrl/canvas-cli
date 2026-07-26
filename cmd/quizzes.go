@@ -1,11 +1,15 @@
 package cmd
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -89,8 +93,8 @@ func newAnswerQuizCommand() *cobra.Command {
 	cmd := &cobra.Command{
 		Use: "answer SUBMISSION_ID", Short: "Submit answers from a JSON file", Args: cobra.ExactArgs(1),
 		Long: `Submit one or more Classic Quiz answers from JSON. Scalar, array, and
-nested answer values are encoded using Canvas' bracketed form convention. This
-updates the active attempt and requires --confirm.`,
+nested answer values are preserved in Canvas' documented JSON request shape.
+This updates the active attempt and requires --confirm.`,
 		Example: `  canvas quizzes answer 789 --answers-file answers.json --confirm
 
   # answers.json
@@ -109,43 +113,15 @@ updates the active attempt and requires --confirm.`,
 			if err != nil {
 				return err
 			}
-			var payload map[string]any
-			if err := json.Unmarshal(data, &payload); err != nil {
+			payload, err := parseQuizAnswers(data)
+			if err != nil {
 				return err
 			}
 			ctx, c, err := contextWithClient()
 			if err != nil {
 				return err
 			}
-			values := url.Values{}
-			for _, key := range []string{"attempt", "validation_token", "access_code"} {
-				if value, ok := payload[key]; ok {
-					values.Set(key, fmt.Sprint(value))
-				}
-			}
-			questions, ok := payload["quiz_questions"].([]any)
-			if !ok {
-				return fmt.Errorf("answers file must contain quiz_questions array")
-			}
-			for i, question := range questions {
-				q, ok := question.(map[string]any)
-				if !ok {
-					return fmt.Errorf("quiz_questions[%d] must be an object", i)
-				}
-				id, ok := q["id"]
-				if !ok {
-					return fmt.Errorf("quiz_questions[%d].id is required", i)
-				}
-				answer, ok := q["answer"]
-				if !ok {
-					return fmt.Errorf("quiz_questions[%d].answer is required", i)
-				}
-				values.Set(fmt.Sprintf("quiz_questions[%d][id]", i), fmt.Sprint(id))
-				if err := addFormValue(values, fmt.Sprintf("quiz_questions[%d][answer]", i), answer); err != nil {
-					return fmt.Errorf("quiz_questions[%d].answer: %w", i, err)
-				}
-			}
-			resp, err := c.Form(ctx, http.MethodPost, "/api/v1/quiz_submissions/"+url.PathEscape(args[0])+"/questions", values)
+			resp, err := c.JSON(ctx, http.MethodPost, "/api/v1/quiz_submissions/"+url.PathEscape(args[0])+"/questions", nil, payload)
 			if err != nil {
 				return err
 			}
@@ -155,6 +131,49 @@ updates the active attempt and requires --confirm.`,
 	cmd.Flags().StringVar(&answersFile, "answers-file", "", "JSON file with attempt, validation_token, and quiz_questions")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Confirm updating answers in the active quiz attempt")
 	return cmd
+}
+
+func parseQuizAnswers(data []byte) (map[string]any, error) {
+	var payload map[string]any
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.UseNumber()
+	if err := decoder.Decode(&payload); err != nil {
+		return nil, fmt.Errorf("invalid answers JSON: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		return nil, fmt.Errorf("invalid answers JSON: expected one JSON object")
+	}
+
+	attempt, ok := payload["attempt"].(json.Number)
+	if !ok {
+		return nil, fmt.Errorf("answers file must contain integer attempt")
+	}
+	attemptNumber, err := strconv.ParseInt(string(attempt), 10, 64)
+	if err != nil || attemptNumber < 1 {
+		return nil, fmt.Errorf("answers file attempt must be a positive integer")
+	}
+	token, ok := payload["validation_token"].(string)
+	if !ok || strings.TrimSpace(token) == "" {
+		return nil, fmt.Errorf("answers file must contain non-empty validation_token")
+	}
+	questions, ok := payload["quiz_questions"].([]any)
+	if !ok || len(questions) == 0 {
+		return nil, fmt.Errorf("answers file must contain a non-empty quiz_questions array")
+	}
+	for i, question := range questions {
+		q, ok := question.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("quiz_questions[%d] must be an object", i)
+		}
+		if _, ok := q["id"]; !ok {
+			return nil, fmt.Errorf("quiz_questions[%d].id is required", i)
+		}
+		if _, ok := q["answer"]; !ok {
+			return nil, fmt.Errorf("quiz_questions[%d].answer is required", i)
+		}
+	}
+	return payload, nil
 }
 
 func newCompleteQuizCommand() *cobra.Command {
@@ -187,30 +206,4 @@ func newCompleteQuizCommand() *cobra.Command {
 	cmd.Flags().StringVar(&validation, "validation-token", "", "Quiz submission validation token")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Confirm this irreversible write operation")
 	return cmd
-}
-
-func addFormValue(values url.Values, key string, value any) error {
-	switch typed := value.(type) {
-	case nil:
-		values.Set(key, "")
-	case []any:
-		for _, item := range typed {
-			if _, nested := item.([]any); nested {
-				return fmt.Errorf("nested arrays are not supported")
-			}
-			if _, nested := item.(map[string]any); nested {
-				return fmt.Errorf("objects inside arrays are not supported")
-			}
-			values.Add(key+"[]", fmt.Sprint(item))
-		}
-	case map[string]any:
-		for nestedKey, nestedValue := range typed {
-			if err := addFormValue(values, key+"["+nestedKey+"]", nestedValue); err != nil {
-				return err
-			}
-		}
-	default:
-		values.Set(key, fmt.Sprint(typed))
-	}
-	return nil
 }
