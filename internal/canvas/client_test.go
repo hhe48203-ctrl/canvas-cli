@@ -13,7 +13,19 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
+
+func TestClientDoesNotPutATotalTimeoutOnFileTransfers(t *testing.T) {
+	client := NewClient("https://canvas.test", "secret")
+	if client.HTTPClient.Timeout != 0 {
+		t.Fatalf("client timeout = %s; want no total transfer timeout", client.HTTPClient.Timeout)
+	}
+	transport, ok := client.HTTPClient.Transport.(*http.Transport)
+	if !ok || transport.ResponseHeaderTimeout != 60*time.Second {
+		t.Fatalf("transport = %#v; want a 60-second response header timeout", client.HTTPClient.Transport)
+	}
+}
 
 func TestRequestAddsBearerTokenAndQuery(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

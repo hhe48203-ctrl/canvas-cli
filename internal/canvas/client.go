@@ -32,7 +32,9 @@ type Response struct {
 }
 
 func NewClient(baseURL, token string) *Client {
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTPClient: &http.Client{Timeout: 60 * time.Second}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 60 * time.Second
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTPClient: &http.Client{Transport: transport}}
 }
 
 func (c *Client) Request(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string) (Response, error) {
