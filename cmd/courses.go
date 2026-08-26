@@ -20,6 +20,7 @@ func newCoursesCommand() *cobra.Command {
 		Use:   "list",
 		Short: "List courses for the current user",
 		Long:  "List courses visible to the authenticated user. Canvas paginates lists; use --all-pages to follow every opaque Link header.",
+		Args:  cobra.NoArgs,
 		Example: `  canvas courses list
   canvas courses list --query enrollment_type=student --query include[]=term
   canvas courses list --all-pages --json`,

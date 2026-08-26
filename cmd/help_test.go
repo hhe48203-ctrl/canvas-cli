@@ -77,6 +77,19 @@ func TestEveryHighLevelListExposesQueryAndPaginationFlags(t *testing.T) {
 	}
 }
 
+func TestNoArgumentCommandsRejectExtraArguments(t *testing.T) {
+	root := newRootCommand()
+	for _, path := range [][]string{{"courses", "list"}, {"auth", "status"}, {"me"}} {
+		command, _, err := root.Find(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := command.Args(command, []string{"unexpected"}); err == nil {
+			t.Errorf("%s accepted an extra argument", command.CommandPath())
+		}
+	}
+}
+
 func TestAPIInvokeHelpCoversGenericRequestModes(t *testing.T) {
 	root := newRootCommand()
 	invoke, _, err := root.Find([]string{"api", "invoke"})

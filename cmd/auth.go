@@ -20,6 +20,7 @@ func newAuthCommand() *cobra.Command {
 			Use:   "status",
 			Short: "Check whether the configured token works",
 			Long:  "Call /api/v1/users/self to verify the configured base URL and CANVAS_API_TOKEN.",
+			Args:  cobra.NoArgs,
 			Example: `  canvas auth status
   CANVAS_BASE_URL=https://school.instructure.com CANVAS_API_TOKEN=token canvas auth status --json`,
 			RunE: func(cmd *cobra.Command, args []string) error {
@@ -57,6 +58,7 @@ func newMeCommand() *cobra.Command {
 		Use:   "me",
 		Short: "Show the current Canvas user",
 		Long:  "Return the Canvas user associated with CANVAS_API_TOKEN.",
+		Args:  cobra.NoArgs,
 		Example: `  canvas me
   canvas me --json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
