@@ -1,8 +1,6 @@
 package cmd
 
 import (
-	"fmt"
-
 	"github.com/hhe48203-ctrl/canvas-cli/internal/config"
 	"github.com/spf13/cobra"
 )
@@ -45,8 +43,7 @@ func newAuthCommand() *cobra.Command {
 				if err := config.SaveBaseURL(args[0]); err != nil {
 					return err
 				}
-				fmt.Println("Canvas URL saved")
-				return nil
+				return emit(map[string]any{"message": "Canvas URL saved"})
 			},
 		},
 	)
