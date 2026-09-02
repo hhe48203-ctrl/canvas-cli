@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -74,6 +73,19 @@ func TestEveryHighLevelListExposesQueryAndPaginationFlags(t *testing.T) {
 			if command.Flags().Lookup(flag) == nil {
 				t.Errorf("%s is missing --%s", command.CommandPath(), flag)
 			}
+		}
+	}
+}
+
+func TestNoArgumentCommandsRejectExtraArguments(t *testing.T) {
+	root := newRootCommand()
+	for _, path := range [][]string{{"courses", "list"}, {"auth", "status"}, {"me"}} {
+		command, _, err := root.Find(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := command.Args(command, []string{"unexpected"}); err == nil {
+			t.Errorf("%s accepted an extra argument", command.CommandPath())
 		}
 	}
 }
@@ -150,13 +162,122 @@ func TestEmitHTTPResponseCollectsAllPages(t *testing.T) {
 	}
 }
 
-func TestQuizArrayAnswerUsesRepeatedBracketFields(t *testing.T) {
-	values := url.Values{}
-	if err := addFormValue(values, "quiz_questions[0][answer]", []any{"a", "b"}); err != nil {
+func TestPageAccumulatorCollectsCanvasCompoundDocuments(t *testing.T) {
+	first := decodeJSON([]byte(`{
+		"meta":{"primaryCollection":"comments"},
+		"comments":[{"id":1}],
+		"authors":[{"id":10,"name":"First"}]
+	}`))
+	combined, err := newPageAccumulator(first)
+	if err != nil {
 		t.Fatal(err)
 	}
-	got := values["quiz_questions[0][answer][]"]
-	if len(got) != 2 || got[0] != "a" || got[1] != "b" {
-		t.Fatalf("encoded answers = %#v", values)
+	second := decodeJSON([]byte(`{
+		"meta":{"primaryCollection":"comments"},
+		"comments":[{"id":2}],
+		"authors":[{"id":10,"name":"First"},{"id":11,"name":"Second"}]
+	}`))
+	if err := combined.Append(second); err != nil {
+		t.Fatal(err)
+	}
+	result := combined.Result().(map[string]any)
+	if got := len(result["comments"].([]any)); got != 2 {
+		t.Fatalf("comments = %#v", result["comments"])
+	}
+	if got := len(result["authors"].([]any)); got != 2 {
+		t.Fatalf("authors = %#v", result["authors"])
+	}
+}
+
+func TestDecodeJSONPreservesCanvasIntegerIDs(t *testing.T) {
+	value, ok := decodeJSON([]byte(`{"id":9007199254740993}`)).(map[string]any)
+	if !ok {
+		t.Fatal("decoded response is not an object")
+	}
+	if got := value["id"]; got != json.Number("9007199254740993") {
+		t.Fatalf("id = %#v; want an exact JSON number", got)
+	}
+}
+
+func TestParseQuizAnswersPreservesNestedMatchingAnswer(t *testing.T) {
+	payload, err := parseQuizAnswers([]byte(`{
+		"attempt": 1,
+		"validation_token": "token",
+		"quiz_questions": [{
+			"id": 101,
+			"answer": [{"answer_id": 6, "match_id": 10}]
+		}]
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	questions := payload["quiz_questions"].([]any)
+	answer := questions[0].(map[string]any)["answer"].([]any)
+	pair := answer[0].(map[string]any)
+	if pair["answer_id"] != json.Number("6") || pair["match_id"] != json.Number("10") {
+		t.Fatalf("matching answer = %#v", pair)
+	}
+}
+
+func TestParseQuizAnswersRequiresSessionCredentials(t *testing.T) {
+	tests := []struct {
+		name, input, want string
+	}{
+		{"missing attempt", `{"validation_token":"token","quiz_questions":[{"id":1,"answer":"A"}]}`, "integer attempt"},
+		{"invalid attempt", `{"attempt":0,"validation_token":"token","quiz_questions":[{"id":1,"answer":"A"}]}`, "positive integer"},
+		{"missing token", `{"attempt":1,"quiz_questions":[{"id":1,"answer":"A"}]}`, "validation_token"},
+		{"empty questions", `{"attempt":1,"validation_token":"token","quiz_questions":[]}`, "non-empty quiz_questions"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := parseQuizAnswers([]byte(test.input))
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v; want text %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestQuizCompletionSessionValues(t *testing.T) {
+	values, err := quizSessionValues(2, "validation", "access")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values.Get("attempt") != "2" || values.Get("validation_token") != "validation" || values.Get("access_code") != "access" {
+		t.Fatalf("completion form = %#v", values)
+	}
+}
+
+func TestQuizCompletionRequiresOfficialSessionFields(t *testing.T) {
+	tests := []struct {
+		name    string
+		attempt int
+		token   string
+		want    string
+	}{
+		{name: "attempt", attempt: 0, token: "validation", want: "--attempt"},
+		{name: "validation token", attempt: 1, token: " ", want: "--validation-token"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := quizSessionValues(test.attempt, test.token, "")
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v; want text %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestCollectUploadedFileIDsSupportsMultipleAssignmentFiles(t *testing.T) {
+	uploaded := []string{}
+	ids, err := collectUploadedFileIDs([]string{"part-1.pdf", "part-2.pdf"}, func(path string) (map[string]any, error) {
+		uploaded = append(uploaded, path)
+		return map[string]any{"id": len(uploaded)}, nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(uploaded, ",") != "part-1.pdf,part-2.pdf" || strings.Join(ids, ",") != "1,2" {
+		t.Fatalf("uploaded = %#v, ids = %#v", uploaded, ids)
 	}
 }

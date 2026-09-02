@@ -197,7 +197,7 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 	invoke.Flags().StringArrayVar(&headerArgs, "header", nil, "Additional HTTP header name=value; repeat for multiple values")
 	invoke.Flags().StringVar(&bodyFile, "body", "", "Raw request body file, or - to read stdin")
 	invoke.Flags().StringVar(&contentTypeFlag, "content-type", "application/json", "Content-Type used with --body")
-	invoke.Flags().BoolVar(&allPages, "all-pages", false, "Follow Canvas Link headers and combine all JSON-array pages")
+	invoke.Flags().BoolVar(&allPages, "all-pages", false, "Follow Canvas Link headers and combine array or compound-document pages")
 	invoke.Flags().BoolVar(&includeHeaders, "include-headers", false, "Include HTTP status, headers, page count, and data")
 	invoke.Flags().BoolVar(&confirm, "confirm", false, "Confirm POST, PUT, PATCH, or DELETE after reviewing the request")
 	invoke.MarkFlagsMutuallyExclusive("body", "form")

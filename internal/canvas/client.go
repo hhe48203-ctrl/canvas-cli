@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -29,7 +32,9 @@ type Response struct {
 }
 
 func NewClient(baseURL, token string) *Client {
-	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTPClient: &http.Client{Timeout: 60 * time.Second}}
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.ResponseHeaderTimeout = 60 * time.Second
+	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Token: token, HTTPClient: &http.Client{Transport: transport}}
 }
 
 func (c *Client) Request(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string) (Response, error) {
@@ -59,14 +64,14 @@ func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, qu
 			req.Header.Add(key, value)
 		}
 	}
-	if c.Token != "" && req.URL.Host == mustURLHost(c.BaseURL) {
+	if c.Token != "" && sameOrigin(req.URL, parsedURL(c.BaseURL)) {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
 
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return Response{}, err
 	}
@@ -107,10 +112,10 @@ func (c *Client) Download(ctx context.Context, path, destination string) (int64,
 		return 0, err
 	}
 	req.Header.Set("Accept", "*/*")
-	if c.Token != "" && req.URL.Host == mustURLHost(c.BaseURL) {
+	if c.Token != "" && sameOrigin(req.URL, parsedURL(c.BaseURL)) {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	resp, err := c.HTTPClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -122,12 +127,31 @@ func (c *Client) Download(ctx context.Context, path, destination string) (int64,
 		}
 		return 0, &HTTPError{StatusCode: resp.StatusCode, Body: data}
 	}
-	file, err := os.OpenFile(destination, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o600)
+	directory := filepath.Dir(destination)
+	file, err := os.CreateTemp(directory, "."+filepath.Base(destination)+".tmp-*")
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
-	return io.Copy(file, resp.Body)
+	tempPath := file.Name()
+	committed := false
+	defer func() {
+		_ = file.Close()
+		if !committed {
+			_ = os.Remove(tempPath)
+		}
+	}()
+	written, err := io.Copy(file, resp.Body)
+	if err != nil {
+		return 0, err
+	}
+	if err := file.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(tempPath, destination); err != nil {
+		return 0, err
+	}
+	committed = true
+	return written, nil
 }
 
 func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[string]any, error) {
@@ -161,7 +185,9 @@ func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[str
 	}
 	var payload map[string]any
 	if len(result) > 0 {
-		if err := json.Unmarshal(result, &payload); err != nil {
+		decoder := json.NewDecoder(bytes.NewReader(result))
+		decoder.UseNumber()
+		if err := decoder.Decode(&payload); err != nil {
 			return nil, fmt.Errorf("Canvas upload returned invalid JSON: %w", err)
 		}
 	}
@@ -169,42 +195,69 @@ func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[str
 }
 
 func multipartUpload(ctx context.Context, c *Client, endpoint string, params map[string]any, filePath string) ([]byte, error) {
-	var buf bytes.Buffer
-	writer := multipart.NewWriter(&buf)
-	for key, value := range params {
-		if err := writer.WriteField(key, fmt.Sprint(value)); err != nil {
-			return nil, err
-		}
-	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
 	}
-	defer file.Close()
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
+	info, err := file.Stat()
 	if err != nil {
+		_ = file.Close()
 		return nil, err
 	}
-	if _, err := io.Copy(part, file); err != nil {
-		return nil, err
-	}
-	if err := writer.Close(); err != nil {
-		return nil, err
-	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, &buf)
+	boundary, overhead, err := multipartEnvelope(params, filepath.Base(filePath))
 	if err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	if info.Size() > math.MaxInt64-overhead {
+		_ = file.Close()
+		return nil, fmt.Errorf("file is too large to upload")
+	}
+
+	reader, pipeWriter := io.Pipe()
+	writer := multipart.NewWriter(pipeWriter)
+	if err := writer.SetBoundary(boundary); err != nil {
+		_ = file.Close()
+		_ = reader.Close()
+		_ = pipeWriter.Close()
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, reader)
+	if err != nil {
+		_ = file.Close()
+		_ = reader.Close()
+		_ = pipeWriter.Close()
 		return nil, err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.ContentLength = overhead + info.Size()
+
+	writeDone := make(chan error, 1)
+	go func() {
+		writeErr := writeMultipart(writer, params, filepath.Base(filePath), file)
+		_ = pipeWriter.CloseWithError(writeErr)
+		writeDone <- writeErr
+	}()
+
 	// Canvas file uploads may redirect from external storage back to Canvas. Stop
 	// automatic redirects so the confirmation request can be authenticated.
-	uploadClient := *c.HTTPClient
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	uploadClient := *httpClient
 	uploadClient.CheckRedirect = func(_ *http.Request, _ []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
 	resp, err := uploadClient.Do(req)
+	_ = reader.Close()
+	writeErr := <-writeDone
 	if err != nil {
 		return nil, err
+	}
+	if writeErr != nil && !errors.Is(writeErr, io.ErrClosedPipe) {
+		_ = resp.Body.Close()
+		return nil, fmt.Errorf("stream upload: %w", writeErr)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(resp.Body)
@@ -230,21 +283,82 @@ func multipartUpload(ctx context.Context, c *Client, endpoint string, params map
 	return data, nil
 }
 
+type byteCounter int64
+
+func (counter *byteCounter) Write(data []byte) (int, error) {
+	*counter += byteCounter(len(data))
+	return len(data), nil
+}
+
+func multipartEnvelope(params map[string]any, fileName string) (string, int64, error) {
+	var size byteCounter
+	writer := multipart.NewWriter(&size)
+	if err := writeMultipartFields(writer, params); err != nil {
+		return "", 0, err
+	}
+	if _, err := writer.CreateFormFile("file", fileName); err != nil {
+		return "", 0, err
+	}
+	if err := writer.Close(); err != nil {
+		return "", 0, err
+	}
+	return writer.Boundary(), int64(size), nil
+}
+
+func writeMultipart(writer *multipart.Writer, params map[string]any, fileName string, file *os.File) error {
+	if err := writeMultipartFields(writer, params); err != nil {
+		_ = file.Close()
+		return err
+	}
+	part, err := writer.CreateFormFile("file", fileName)
+	if err == nil {
+		_, err = io.Copy(part, file)
+	}
+	if closeErr := writer.Close(); err == nil {
+		err = closeErr
+	}
+	if closeErr := file.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
+func writeMultipartFields(writer *multipart.Writer, params map[string]any) error {
+	for key, value := range params {
+		if err := writer.WriteField(key, fmt.Sprint(value)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // NextLink returns the opaque next-page URL from an RFC 8288 Link header.
 func NextLink(header http.Header) string {
-	for _, part := range splitLinkHeader(header.Values("Link")) {
-		sections := strings.Split(part, ";")
-		if len(sections) < 2 {
+	var linkValues []string
+	for name, values := range header {
+		if strings.EqualFold(name, "Link") {
+			linkValues = append(linkValues, values...)
+		}
+	}
+	for _, part := range splitLinkHeader(linkValues) {
+		part = strings.TrimSpace(part)
+		end := strings.IndexByte(part, '>')
+		if !strings.HasPrefix(part, "<") || end < 1 {
 			continue
 		}
-		urlPart := strings.TrimSpace(sections[0])
-		if !strings.HasPrefix(urlPart, "<") || !strings.HasSuffix(urlPart, ">") {
-			continue
-		}
-		for _, parameter := range sections[1:] {
+		for _, parameter := range splitOutside(part[end+1:], ';', false) {
 			name, value, ok := strings.Cut(strings.TrimSpace(parameter), "=")
-			if ok && strings.EqualFold(name, "rel") && strings.Trim(value, `"`) == "next" {
-				return strings.TrimSuffix(strings.TrimPrefix(urlPart, "<"), ">")
+			if !ok || !strings.EqualFold(name, "rel") {
+				continue
+			}
+			value = strings.TrimSpace(value)
+			if unquoted, err := strconv.Unquote(value); err == nil {
+				value = unquoted
+			}
+			for _, relation := range strings.Fields(value) {
+				if strings.EqualFold(relation, "next") {
+					return part[1:end]
+				}
 			}
 		}
 	}
@@ -254,43 +368,108 @@ func NextLink(header http.Header) string {
 func splitLinkHeader(values []string) []string {
 	var result []string
 	for _, value := range values {
-		start := 0
-		inAngles := false
-		for i, r := range value {
-			switch r {
-			case '<':
-				inAngles = true
-			case '>':
-				inAngles = false
-			case ',':
-				if !inAngles {
-					result = append(result, value[start:i])
-					start = i + 1
-				}
-			}
-		}
-		result = append(result, value[start:])
+		result = append(result, splitOutside(value, ',', true)...)
 	}
 	return result
 }
 
-func contentType(path string) string {
-	ext := filepath.Ext(path)
-	switch ext {
-	case ".pdf":
-		return "application/pdf"
-	case ".doc", ".docx":
-		return "application/msword"
-	case ".txt":
-		return "text/plain"
-	default:
-		return "application/octet-stream"
+func splitOutside(value string, separator byte, trackAngles bool) []string {
+	var result []string
+	start := 0
+	inAngles := false
+	inQuotes := false
+	escaped := false
+	for i := 0; i < len(value); i++ {
+		char := value[i]
+		if escaped {
+			escaped = false
+			continue
+		}
+		if inQuotes && char == '\\' {
+			escaped = true
+			continue
+		}
+		if char == '"' && !inAngles {
+			inQuotes = !inQuotes
+			continue
+		}
+		if trackAngles && !inQuotes {
+			switch char {
+			case '<':
+				inAngles = true
+			case '>':
+				inAngles = false
+			}
+		}
+		if char == separator && !inAngles && !inQuotes {
+			result = append(result, value[start:i])
+			start = i + 1
+		}
 	}
+	return append(result, value[start:])
 }
 
-func mustURLHost(raw string) string {
-	u, _ := url.Parse(raw)
-	return u.Host
+func contentType(path string) string {
+	detected := mime.TypeByExtension(strings.ToLower(filepath.Ext(path)))
+	if detected == "" {
+		return "application/octet-stream"
+	}
+	mediaType, _, err := mime.ParseMediaType(detected)
+	if err != nil {
+		return detected
+	}
+	return mediaType
+}
+
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	httpClient := c.HTTPClient
+	if httpClient == nil {
+		httpClient = http.DefaultClient
+	}
+	redirectSafeClient := *httpClient
+	previousCheck := redirectSafeClient.CheckRedirect
+	base := parsedURL(c.BaseURL)
+	redirectSafeClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
+		if !sameOrigin(next.URL, base) {
+			next.Header.Del("Authorization")
+		}
+		if previousCheck != nil {
+			return previousCheck(next, via)
+		}
+		if len(via) >= 10 {
+			return errors.New("stopped after 10 redirects")
+		}
+		return nil
+	}
+	return redirectSafeClient.Do(req)
+}
+
+func parsedURL(raw string) *url.URL {
+	parsed, _ := url.Parse(raw)
+	return parsed
+}
+
+func sameOrigin(left, right *url.URL) bool {
+	if left == nil || right == nil ||
+		!strings.EqualFold(left.Scheme, right.Scheme) ||
+		!strings.EqualFold(left.Hostname(), right.Hostname()) {
+		return false
+	}
+	return originPort(left) == originPort(right)
+}
+
+func originPort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+	switch strings.ToLower(value.Scheme) {
+	case "http":
+		return "80"
+	case "https":
+		return "443"
+	default:
+		return ""
+	}
 }
 
 type HTTPError struct {
