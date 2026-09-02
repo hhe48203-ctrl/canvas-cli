@@ -36,7 +36,7 @@ func newFilesCommand() *cobra.Command {
 			if path == "" {
 				path = "canvas-file-" + args[0]
 			}
-			bytes, err := c.Download(ctx, "/api/v1/files/"+url.PathEscape(args[0])+"/download", path)
+			bytes, err := c.Download(ctx, "/files/"+url.PathEscape(args[0])+"/download", path)
 			if err != nil {
 				return err
 			}
