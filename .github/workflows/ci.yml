@@ -10,7 +10,13 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
@@ -22,6 +28,7 @@ jobs:
           cache: true
 
       - name: Verify formatting
+        if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)"
 
       - name: Run tests

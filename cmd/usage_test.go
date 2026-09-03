@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -113,6 +115,9 @@ func TestUsageCommands(t *testing.T) {
 	defer server.Close()
 	closed := httptest.NewServer(http.NotFoundHandler())
 	closed.Close()
+	untrustedTLS := httptest.NewTLSServer(http.NotFoundHandler())
+	untrustedTLS.Config.ErrorLog = log.New(io.Discard, "", 0)
+	defer untrustedTLS.Close()
 
 	tests := []struct {
 		name, command, kind, errorKind, operation string
@@ -127,7 +132,12 @@ func TestUsageCommands(t *testing.T) {
 		{"execution failure", "canvas courses list", "command", "execution", "", []string{"courses", "list", "--all-pages", "--query", "shape=object"}, 200},
 		{"HTTP failure", "canvas api invoke", "command", "http", "", []string{"api", "invoke", "GET", "/denied"}, 403},
 		{"network failure", "canvas me", "command", "network", "", []string{"me", "--base-url", closed.URL}, 0},
+		{"TLS failure", "canvas me", "command", "network", "", []string{"me", "--base-url", untrustedTLS.URL}, 0},
+		{"invalid URL escape", "canvas api invoke", "command", "arguments", "", []string{"api", "invoke", "GET", "/SENSITIVE%ZZ"}, 0},
+		{"invalid header name", "canvas api invoke", "command", "arguments", "", []string{"api", "invoke", "GET", "/valid", "--header", "Bad Header=SENSITIVE-value"}, 0},
+		{"invalid header value", "canvas api invoke", "command", "arguments", "", []string{"api", "invoke", "GET", "/valid", "--header", "X-Test=SENSITIVE\nvalue"}, 0},
 		{"invalid config", "canvas me", "command", "configuration", "", []string{"me", "--base-url", "SENSITIVE-invalid-url"}, 0},
+		{"invalid config escape", "canvas me", "command", "configuration", "", []string{"me", "--base-url", "http://SENSITIVE%ZZ"}, 0},
 		{"missing token", "canvas me", "command", "configuration", "", []string{"me"}, 0},
 		{"invalid saved URL", "canvas auth set-url", "command", "configuration", "", []string{"auth", "set-url", "SENSITIVE-invalid-url"}, 0},
 		{"missing args", "canvas courses show", "command", "arguments", "", []string{"courses", "show"}, 0},
@@ -271,13 +281,16 @@ func TestUsageStorage(t *testing.T) {
 			}
 		}
 	}
-	if err := os.Truncate(path, usageDailyLimit); err != nil {
+	// Fill the cap with complete JSON lines, rather than an incomplete zero tail.
+	full := bytes.Repeat([]byte("{}\n"), usageDailyLimit/3)
+	full = append(full, "{}\n"...)
+	if err := os.WriteFile(path, full, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if err := appendUsage(dir, event); err != nil {
 		t.Fatal(err)
 	}
-	if info, err := os.Stat(path); err != nil || info.Size() != usageDailyLimit {
+	if info, err := os.Stat(path); err != nil || info.Size() != int64(len(full)) {
 		t.Fatalf("daily cap not respected: %v, %v", info, err)
 	}
 	// The next UTC day gets a new file even when the previous day is full.
@@ -347,6 +360,20 @@ func TestUsageUnwritable(t *testing.T) {
 
 func TestUsageConcurrentProcesses(t *testing.T) {
 	dir := isolateUsage(t)
+	// Preserve a complete existing record while concurrently repairing a partial tail.
+	if _, _, exit := runUsage(t, true, "api", "describe", "courses.list"); exit != 0 {
+		t.Fatal("could not seed log")
+	}
+	paths, _ := filepath.Glob(filepath.Join(dir, "*.jsonl"))
+	file, err := os.OpenFile(paths[0], os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = file.WriteString(`{"unfinished":"` + strings.Repeat("x", 8192))
+	_ = file.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
 	const count = 12
 	var wg sync.WaitGroup
 	for range count {
@@ -358,8 +385,8 @@ func TestUsageConcurrentProcesses(t *testing.T) {
 		})
 	}
 	wg.Wait()
-	if events := readUsage(t, dir); len(events) != count {
-		t.Fatalf("got %d complete records, want %d", len(events), count)
+	if events := readUsage(t, dir); len(events) != count+1 {
+		t.Fatalf("got %d complete records, want %d", len(events), count+1)
 	}
 }
 

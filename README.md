@@ -198,8 +198,13 @@ Daily files are named `YYYY-MM-DD.jsonl` in the system user cache directory:
 Directories use mode `0700` and files `0600` on Unix. Each logged invocation
 cleans up files older than the current UTC day and six preceding days. Each
 daily file has a 10 MiB soft limit: new records are skipped after the limit is
-reached, with small overshoots possible from concurrent writes. Logging resumes
+reached, with at most one record crossing the limit. Logging resumes
 in a new file the next UTC day. Disabling logging does not delete existing logs.
+
+Writers use native file locks to serialize tail repair and append. Failed writes
+are rolled back; an unfinished trailing record from an interrupted write is
+removed before the next append. If native locking is unavailable, logging is
+skipped and the command still runs normally.
 
 After running commands, use `jq` to summarize call counts, failure rates (0–1),
 and average duration, excluding help and completion:

@@ -1,14 +1,20 @@
 package cmd
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"net/http/httptrace"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime/debug"
+	"sync/atomic"
 	"time"
 
 	"github.com/hhe48203-ctrl/canvas-cli/internal/api"
@@ -78,6 +84,18 @@ func executeWithUsage(root *cobra.Command) error {
 		}
 	}
 	if err != nil {
+		// url.Error implements net.Error even for local URL parsing failures.
+		cause := err
+		for {
+			var urlErr *url.Error
+			if !errors.As(cause, &urlErr) {
+				break
+			}
+			if urlErr.Op == "parse" && event.HTTPStatus == 0 && event.phase != "configuration" {
+				event.phase = "arguments"
+			}
+			cause = urlErr.Err
+		}
 		event.ExitCode = 1
 		event.ErrorKind = event.phase
 		var httpErr *canvas.HTTPError
@@ -91,7 +109,7 @@ func executeWithUsage(root *cobra.Command) error {
 		case event.phase == "configuration":
 		case errors.As(err, &fileErr):
 			event.ErrorKind = "io"
-		case errors.As(err, &netErr):
+		case errors.As(cause, &netErr), errors.Is(cause, context.Canceled), errors.Is(cause, context.DeadlineExceeded):
 			event.ErrorKind = "network"
 		}
 	}
@@ -110,7 +128,16 @@ type usageTransport struct {
 }
 
 func (t usageTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	resp, err := t.RoundTripper.RoundTrip(req)
+	// The standard transport validates headers before asking for a connection.
+	var connecting atomic.Bool
+	trace := &httptrace.ClientTrace{GetConn: func(string) { connecting.Store(true) }}
+	resp, err := t.RoundTripper.RoundTrip(req.WithContext(httptrace.WithClientTrace(req.Context(), trace)))
+	if err != nil {
+		t.event.phase = "arguments"
+		if connecting.Load() {
+			t.event.phase = "network"
+		}
+	}
 	if resp != nil {
 		t.event.HTTPStatus = resp.StatusCode
 	}
@@ -164,26 +191,62 @@ func appendUsage(dir string, event usageEvent) error {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	file, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return err
 	}
 	defer file.Close()
+	// Hold an OS lock through tail repair, append, and rollback. Closing the
+	// descriptor (including process termination) releases it without a stale lock.
+	if err := lockUsageFile(file); err != nil {
+		return err
+	}
 	if err := file.Chmod(0o600); err != nil {
 		return err
 	}
-	info, err = file.Stat()
+	size, err := repairUsageTail(file)
 	if err != nil {
 		return err
 	}
-	// ponytail: soft cap permits concurrent writers to overshoot; add locking only if an exact cap is needed.
-	if info.Size() >= usageDailyLimit {
+	// ponytail: one record may cross the soft cap; preflight its size if an exact cap is needed.
+	if size >= usageDailyLimit {
 		return nil
 	}
 	data, err := json.Marshal(event)
 	if err != nil {
 		return err
 	}
-	_, err = file.Write(append(data, '\n'))
-	return err
+	if _, err := file.Seek(size, io.SeekStart); err != nil {
+		return err
+	}
+	if _, err := file.Write(append(data, '\n')); err != nil {
+		return errors.Join(err, file.Truncate(size))
+	}
+	return nil
+}
+
+// Discard only an unfinished last record left by an interrupted/failed writer.
+// The caller must hold the file lock so another writer's data cannot be removed.
+func repairUsageTail(file *os.File) (int64, error) {
+	info, err := file.Stat()
+	if err != nil {
+		return 0, err
+	}
+	var buf [4096]byte
+	for end := info.Size(); end > 0; {
+		start := max(int64(0), end-int64(len(buf)))
+		data := buf[:end-start]
+		if _, err := file.ReadAt(data, start); err != nil {
+			return 0, err
+		}
+		if index := bytes.LastIndexByte(data, '\n'); index >= 0 {
+			size := start + int64(index) + 1
+			if size == info.Size() {
+				return size, nil
+			}
+			return size, file.Truncate(size)
+		}
+		end = start
+	}
+	return 0, file.Truncate(0)
 }
