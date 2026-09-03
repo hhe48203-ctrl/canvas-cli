@@ -160,6 +160,75 @@ The authoritative API reference is the
 - Quiz answers must come from the user; the CLI does not solve or guess them.
 - Canvas permissions and institutional policies still apply.
 
+## Local usage logs
+
+Usage logging is **on by default** and stays on your computer; nothing is
+uploaded. Disable it in the agent's environment with:
+
+```bash
+export CANVAS_USAGE_LOG=0
+```
+
+Unset the variable to re-enable it. Each completed CLI invocation appends one
+JSONL record, including argument and execution failures. Pagination and file
+transfers produce one command summary. Help and completion have their own
+`kind` so they can be excluded from usage statistics.
+
+| Fields | Meaning |
+| --- | --- |
+| `time`, `version` | UTC completion time; module version, Git revision, or `devel` when unavailable |
+| `kind`, `command` | `command`, `help`, or `completion`; registered command path |
+| `operation_id` | Recognized catalog ID for `api invoke` / `api describe`, when available |
+| `duration_ms`, `exit_code` | Command duration and exit code (0 or 1) |
+| `error_kind` | On failure: `arguments`, `confirmation_required`, `configuration`, `http`, `network`, `io`, or `execution` |
+| `http_status` | Last received HTTP response status, when available; a later network/local failure may still leave this status present |
+
+Only these fields are stored. Logs exclude argument values, raw URLs, tokens,
+file paths, request/response bodies, and original error messages. Unknown
+operation IDs are omitted. Logging failures do not change stdout, stderr, or
+the command's exit code. Forced termination may leave no record, and command
+success does not establish that an agent completed the user's task.
+
+Daily files are named `YYYY-MM-DD.jsonl` in the system user cache directory:
+
+- macOS: `~/Library/Caches/canvas-cli/logs`
+- Linux: `${XDG_CACHE_HOME:-$HOME/.cache}/canvas-cli/logs`
+- Windows: `%LocalAppData%\canvas-cli\logs`
+
+Directories use mode `0700` and files `0600` on Unix. Each logged invocation
+cleans up files older than the current UTC day and six preceding days. Each
+daily file has a 10 MiB soft limit: new records are skipped after the limit is
+reached, with at most one record crossing the limit. Logging resumes
+in a new file the next UTC day. Disabling logging does not delete existing logs.
+
+Writers use native file locks to serialize tail repair and append. Failed writes
+are rolled back; an unfinished trailing record from an interrupted write is
+removed before the next append. If native locking is unavailable, logging is
+skipped and the command still runs normally.
+
+After running commands, use `jq` to summarize call counts, failure rates (0–1),
+and average duration, excluding help and completion:
+
+```bash
+case "$(uname -s)" in
+  Darwin) canvas_log_dir="$HOME/Library/Caches/canvas-cli/logs" ;;
+  *) canvas_log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/canvas-cli/logs" ;;
+esac
+
+jq -s '
+  map(select(.kind == "command"))
+  | group_by([.command, .operation_id])
+  | map({
+      command: .[0].command,
+      operation_id: .[0].operation_id,
+      calls: length,
+      failure_rate: ((map(select(.exit_code != 0)) | length) / length),
+      avg_duration_ms: ((map(.duration_ms) | add) / length)
+    })
+  | sort_by(-.calls)
+' "$canvas_log_dir"/*.jsonl
+```
+
 ## Development
 
 ```bash
