@@ -12,6 +12,14 @@ else
 	echo "canvas: set HOME or CANVAS_CLI_INSTALL_DIR" >&2
 	exit 1
 fi
+case $install_dir in
+	/*) ;;
+	*) install_dir=$(pwd)/$install_dir ;;
+esac
+if [ -d "$install_dir/canvas" ]; then
+	echo "canvas: install target is a directory: $install_dir/canvas" >&2
+	exit 1
+fi
 
 command -v go >/dev/null 2>&1 || {
 	echo "canvas: Go is required: https://go.dev/dl/" >&2

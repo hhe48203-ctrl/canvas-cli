@@ -32,6 +32,9 @@ FAKE_CANVAS_VERSION=one "$root/scripts/install.sh"
 FAKE_CANVAS_VERSION=two "$root/scripts/install.sh"
 [ "$("$HOME/.local/bin/canvas")" = two ]
 
+(cd "$work" && CANVAS_CLI_INSTALL_DIR=relative FAKE_CANVAS_VERSION=custom "$root/scripts/install.sh")
+[ "$("$work/relative/canvas")" = custom ]
+
 if FAKE_CANVAS_VERSION=broken FAKE_GO_FAIL=1 "$root/scripts/install.sh"; then
 	echo "failed build unexpectedly installed" >&2
 	exit 1
