@@ -156,6 +156,63 @@ canvas api invoke METHOD /api/v1/example \
 - Quiz 答案必须由用户提供，CLI 不会求解或猜测；
 - Canvas 权限和学校政策仍然有效。
 
+## 本地使用日志
+
+使用日志**默认开启**，仅保存在本机，不会上报。可以在 Agent 的运行环境中关闭：
+
+```bash
+export CANVAS_USAGE_LOG=0
+```
+
+取消设置该变量即可重新开启。每次 CLI 调用结束后追加一条 JSONL，包含参数错误
+和执行失败。分页、文件传输只记录一条命令摘要；帮助和自动补全使用单独的 `kind`，
+方便在统计时排除。
+
+| 字段 | 含义 |
+| --- | --- |
+| `time`、`version` | UTC 完成时间；模块版本、Git 提交号，无法获取时为 `devel` |
+| `kind`、`command` | `command`、`help` 或 `completion`；已注册的命令路径 |
+| `operation_id` | `api invoke` / `api describe` 已识别的目录操作 ID，可用时记录 |
+| `duration_ms`、`exit_code` | 命令耗时和退出码（0 或 1） |
+| `error_kind` | 失败类别：`arguments`、`confirmation_required`、`configuration`、`http`、`network`、`io` 或 `execution` |
+| `http_status` | 可获取的最后一次 HTTP 响应状态；之后发生网络或本地错误时，仍可能保留此状态 |
+
+只记录这些白名单字段，不记录参数值、原始 URL、Token、文件路径、请求或响应正文、
+原始错误消息；未知 operation ID 也不记录。日志失败不会改变 stdout、stderr 或退出码。
+强制终止可能没有结束记录；命令成功不代表 Agent 完成了用户任务。
+
+每天的文件名为 `YYYY-MM-DD.jsonl`，位于系统用户缓存目录：
+
+- macOS：`~/Library/Caches/canvas-cli/logs`
+- Linux：`${XDG_CACHE_HOME:-$HOME/.cache}/canvas-cli/logs`
+- Windows：`%LocalAppData%\canvas-cli\logs`
+
+Unix 上目录权限为 `0700`，文件为 `0600`。每次记录时清理过期文件，保留当前 UTC
+日期及之前六天。每日文件采用 10 MiB 软上限：达到后跳过新记录，并发写入可能略微
+超限；下一个 UTC 日期会开始新文件。关闭日志不会删除已有文件。
+
+运行命令后，可用 `jq` 汇总调用次数、失败率（0–1）和平均耗时，排除帮助与自动补全：
+
+```bash
+case "$(uname -s)" in
+  Darwin) canvas_log_dir="$HOME/Library/Caches/canvas-cli/logs" ;;
+  *) canvas_log_dir="${XDG_CACHE_HOME:-$HOME/.cache}/canvas-cli/logs" ;;
+esac
+
+jq -s '
+  map(select(.kind == "command"))
+  | group_by([.command, .operation_id])
+  | map({
+      command: .[0].command,
+      operation_id: .[0].operation_id,
+      calls: length,
+      failure_rate: ((map(select(.exit_code != 0)) | length) / length),
+      avg_duration_ms: ((map(.duration_ms) | add) / length)
+    })
+  | sort_by(-.calls)
+' "$canvas_log_dir"/*.jsonl
+```
+
 ## 开发
 
 ```bash

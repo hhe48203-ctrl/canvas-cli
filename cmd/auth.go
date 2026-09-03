@@ -40,6 +40,9 @@ func newAuthCommand() *cobra.Command {
 			Example: `  canvas auth set-url https://school.instructure.com`,
 			Args:    cobra.ExactArgs(1),
 			RunE: func(cmd *cobra.Command, args []string) error {
+				if activeUsage != nil {
+					activeUsage.phase = "configuration"
+				}
 				if err := config.SaveBaseURL(args[0]); err != nil {
 					return err
 				}

@@ -35,7 +35,7 @@ var (
 )
 
 func Execute() {
-	if err := rootCmd.Execute(); err != nil {
+	if err := executeWithUsage(rootCmd); err != nil {
 		mode := outputMode()
 		if mode == "table" {
 			fmt.Fprintln(os.Stderr, "canvas:", err)
@@ -96,11 +96,19 @@ func newRootCommand() *cobra.Command {
 }
 
 func client() (*canvas.Client, error) {
+	if activeUsage != nil {
+		activeUsage.phase = "configuration"
+	}
 	cfg, err := config.Resolve(baseURL)
 	if err != nil {
 		return nil, err
 	}
-	return canvas.NewClient(cfg.BaseURL, cfg.Token), nil
+	c := canvas.NewClient(cfg.BaseURL, cfg.Token)
+	if activeUsage != nil {
+		activeUsage.phase = "execution"
+		c.HTTPClient.Transport = usageTransport{c.HTTPClient.Transport, activeUsage}
+	}
+	return c, nil
 }
 
 func contextWithClient() (context.Context, *canvas.Client, error) {
@@ -343,7 +351,7 @@ func readBody() ([]byte, error) {
 
 func requireConfirm() error {
 	if !confirm {
-		return fmt.Errorf("this is a write operation; repeat with --confirm")
+		return errConfirmRequired
 	}
 	return nil
 }

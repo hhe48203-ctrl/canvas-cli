@@ -146,7 +146,7 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 				return fmt.Errorf("--all-pages is only valid for GET requests")
 			}
 			if method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions && !confirm {
-				return fmt.Errorf("this is a write operation; repeat with --confirm after reviewing the request")
+				return fmt.Errorf("%w after reviewing the request", errConfirmRequired)
 			}
 
 			query := parsePairs(queryArgs)
