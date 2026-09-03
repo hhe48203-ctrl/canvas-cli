@@ -15,6 +15,16 @@ Canvas CLI 为 AI Agent 提供一套可控的 Canvas LMS 接口。Agent 可以�
 
 ## 安装
 
+在 macOS 或 Linux 上安装最新的 `main` 版本；以后再次运行同一命令即可更新：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/hhe48203-ctrl/canvas-cli/main/scripts/install.sh | sh
+```
+
+脚本使用 Go 构建并验证二进制，然后原子安装到 `~/.local/bin/canvas`，不使用
+`sudo`，也不修改 shell 配置。可用 `CANVAS_CLI_INSTALL_DIR` 更改安装目录，或用
+`CANVAS_CLI_VERSION` 指定 tag/提交。Windows 用户请按下方步骤手动构建检出版本。
+
 把仓库 URL 直接交给 Agent：
 
 ```text
@@ -24,7 +34,7 @@ Canvas CLI 为 AI Agent 提供一套可控的 Canvas LMS 接口。Agent 可以�
 Canvas Token 由我自己设置，不要让我把 Token 粘贴到聊天中。
 ```
 
-也可以手动安装：
+如需构建当前检出版本：
 
 ```bash
 git clone https://github.com/hhe48203-ctrl/canvas-cli.git
