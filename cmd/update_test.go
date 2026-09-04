@@ -3,6 +3,7 @@ package cmd
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 )
 
@@ -33,7 +34,10 @@ func TestReplaceExecutable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(data) != "new" || info.Mode().Perm() != 0o751 {
-		t.Fatalf("replacement = %q mode %o", data, info.Mode().Perm())
+	if string(data) != "new" {
+		t.Fatalf("replacement = %q", data)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o751 {
+		t.Fatalf("replacement mode = %o", info.Mode().Perm())
 	}
 }
