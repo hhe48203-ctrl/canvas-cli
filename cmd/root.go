@@ -47,12 +47,20 @@ func Execute() {
 }
 
 func newRootCommand() *cobra.Command {
+	var update bool
 	root := &cobra.Command{
 		Use:           "canvas",
 		Short:         "Canvas LMS command-line client for university courses",
 		Long:          "Work with university Canvas LMS courses from a terminal or AI agent using human-friendly commands, structured output, and a discoverable generic REST API invoker.",
 		SilenceErrors: true,
 		SilenceUsage:  true,
+		Args:          cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if update {
+				return updateCLI(cmd.OutOrStdout(), cmd.ErrOrStderr())
+			}
+			return cmd.Help()
+		},
 		Example: `  # Configure credentials, then verify them
   export CANVAS_BASE_URL=https://school.instructure.com
   export CANVAS_API_TOKEN=token
@@ -87,6 +95,7 @@ func newRootCommand() *cobra.Command {
 			}
 		},
 	}
+	root.Flags().BoolVar(&update, "update", false, "Update canvas to the latest main build")
 	root.PersistentFlags().StringVar(&baseURL, "base-url", "", "Canvas instance URL (or CANVAS_BASE_URL)")
 	root.PersistentFlags().StringVar(&format, "output", "", "Output format: auto, table, json, yaml")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output JSON")

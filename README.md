@@ -39,6 +39,14 @@ install -m 0755 canvas "$HOME/.local/bin/canvas"
 
 Canvas CLI requires the Go version declared in [`go.mod`](go.mod).
 
+Update an installed binary to the latest `main` build with:
+
+```bash
+canvas --update
+```
+
+The update requires Go and write access to the installed binary.
+
 ## Configure
 
 Create a Canvas access token in **Account → Settings → Approved Integrations**,

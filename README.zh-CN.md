@@ -36,6 +36,14 @@ install -m 0755 canvas "$HOME/.local/bin/canvas"
 
 所需 Go 版本以 [`go.mod`](go.mod) 为准。
 
+将已安装的二进制更新到最新 `main` 构建：
+
+```bash
+canvas --update
+```
+
+更新时需要 Go，并且当前用户必须有权写入已安装的二进制文件。
+
 ## 配置
 
 在 Canvas 的 **Account → Settings → Approved Integrations** 创建 Access
