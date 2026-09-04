@@ -17,18 +17,6 @@ exact action before executing it.
 
 ## Install
 
-Install the latest `main` build on macOS or Linux. Run the same command later
-to update it:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/hhe48203-ctrl/canvas-cli/main/scripts/install.sh | sh
-```
-
-The script builds with Go, verifies the binary, and atomically installs it to
-`~/.local/bin/canvas` without `sudo` or shell configuration changes. Override
-the destination with `CANVAS_CLI_INSTALL_DIR`, or install a tag/commit with
-`CANVAS_CLI_VERSION`. Windows users should build the checkout manually below.
-
 Give the repository URL to an agent:
 
 ```text
@@ -39,7 +27,7 @@ sudo or change my shell configuration without asking. I will set the Canvas
 token myself; do not ask me to paste it into chat.
 ```
 
-To build the current checkout instead:
+Or install it manually:
 
 ```bash
 git clone https://github.com/hhe48203-ctrl/canvas-cli.git

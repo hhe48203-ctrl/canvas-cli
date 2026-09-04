@@ -34,10 +34,6 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-      - name: Test installer
-        if: runner.os == 'Linux'
-        run: scripts/install_test.sh
-
       - name: Run vet
         run: go vet ./...
 
