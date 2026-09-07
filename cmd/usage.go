@@ -82,6 +82,7 @@ func executeWithUsage(root *cobra.Command) (error, output.ErrorDetails) {
 			}
 		}
 	}
+	envelopeStatus := 0
 	if err != nil {
 		// url.Error implements net.Error even for local URL parsing failures.
 		cause := err
@@ -105,6 +106,7 @@ func executeWithUsage(root *cobra.Command) (error, output.ErrorDetails) {
 			event.ErrorKind = "confirmation_required"
 		case errors.As(err, &httpErr):
 			event.ErrorKind, event.HTTPStatus = "http", httpErr.StatusCode
+			envelopeStatus = httpErr.StatusCode
 		case event.phase == "configuration":
 		case errors.As(err, &fileErr):
 			event.ErrorKind = "io"
@@ -121,7 +123,7 @@ func executeWithUsage(root *cobra.Command) (error, output.ErrorDetails) {
 			_ = appendUsage(filepath.Join(cache, "canvas-cli", "logs"), *event)
 		}
 	}
-	return err, output.ErrorDetails{Kind: event.ErrorKind, HTTPStatus: event.HTTPStatus}
+	return err, output.ErrorDetails{Kind: event.ErrorKind, HTTPStatus: envelopeStatus}
 }
 
 type usageTransport struct {

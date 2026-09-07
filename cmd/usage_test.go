@@ -236,6 +236,11 @@ func TestMalformedKeyValueFlagsUseStructuredErrorsWithoutRequests(t *testing.T) 
 
 func TestErrorEnvelopesExposeUsageClassification(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/retry" {
+			w.Header().Set("Retry-After", "0")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(http.StatusForbidden)
 	}))
 	defer server.Close()
@@ -249,6 +254,7 @@ func TestErrorEnvelopesExposeUsageClassification(t *testing.T) {
 	}{
 		{"confirmation", "confirmation_required", []string{"assignments", "submit", "1", "2", "--text", "answer"}, 0},
 		{"http", "http", []string{"api", "invoke", "GET", "/forbidden"}, http.StatusForbidden},
+		{"retry http", "http", []string{"api", "invoke", "GET", "/retry"}, http.StatusServiceUnavailable},
 		{"file", "io", []string{"api", "invoke", "GET", "/courses", "--body", missing}, 0},
 	}
 	for _, test := range tests {
@@ -281,6 +287,76 @@ func TestErrorEnvelopesExposeUsageClassification(t *testing.T) {
 					t.Fatalf("HTTP status = %#v; want %d", envelope.Error.HTTPStatus, test.status)
 				}
 			})
+		}
+	}
+}
+
+func TestNonHTTPErrorEnvelopesOmitStaleHTTPStatus(t *testing.T) {
+	dir := isolateUsage(t)
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closedURL := closed.URL
+	closed.Close()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/files/1/download":
+			_, _ = w.Write([]byte("content"))
+		case "/api/v1/courses":
+			w.Header().Set("Link", "<"+closedURL+"/next>; rel=\"next\"")
+			_, _ = w.Write([]byte(`[{"id":1}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	t.Setenv("CANVAS_BASE_URL", server.URL)
+	t.Setenv("CANVAS_API_TOKEN", "token")
+	missingParent := filepath.Join(t.TempDir(), "missing", "file.txt")
+	tests := []struct {
+		name, kind string
+		args       []string
+	}{
+		{"download", "io", []string{"files", "download", "1", "--destination", missingParent}},
+		{"pagination", "network", []string{"courses", "list", "--all-pages"}},
+	}
+	logged := 0
+	for _, test := range tests {
+		for _, format := range []string{"json", "yaml"} {
+			t.Run(test.name+"/"+format, func(t *testing.T) {
+				args := append([]string{"--" + format}, test.args...)
+				withoutOut, withoutErr, withoutExit := runUsage(t, false, args...)
+				withOut, withErr, withExit := runUsage(t, true, args...)
+				logged++
+				if withoutOut != "" || withOut != "" || withoutExit != 1 || withExit != 1 {
+					t.Fatalf("output with/without logging = (%q, %q, %d) / (%q, %q, %d)", withOut, withErr, withExit, withoutOut, withoutErr, withoutExit)
+				}
+				for _, stderr := range []string{withoutErr, withErr} {
+					var envelope struct {
+						OK    bool `json:"ok" yaml:"ok"`
+						Error struct {
+							Kind       string `json:"kind" yaml:"kind"`
+							HTTPStatus *int   `json:"http_status" yaml:"http_status"`
+						} `json:"error" yaml:"error"`
+					}
+					var err error
+					if format == "json" {
+						err = json.Unmarshal([]byte(stderr), &envelope)
+					} else {
+						err = yaml.Unmarshal([]byte(stderr), &envelope)
+					}
+					if err != nil || envelope.OK || envelope.Error.Kind != test.kind || envelope.Error.HTTPStatus != nil {
+						t.Fatalf("error envelope = %q, parsed = %#v, err = %v", stderr, envelope, err)
+					}
+				}
+			})
+		}
+	}
+	events := readUsage(t, dir)
+	if len(events) != logged {
+		t.Fatalf("usage events = %d; want %d", len(events), logged)
+	}
+	for _, event := range events {
+		if event.HTTPStatus != http.StatusOK {
+			t.Fatalf("usage event status = %d; want %d", event.HTTPStatus, http.StatusOK)
 		}
 	}
 }
