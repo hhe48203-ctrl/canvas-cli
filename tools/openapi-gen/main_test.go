@@ -1,6 +1,10 @@
 package main
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
@@ -78,5 +82,48 @@ paths:
 	}
 	if len(items[0].op.Security) != 1 || items[0].op.Security[0]["oauth2"][0] != "pages:write" {
 		t.Fatalf("security = %#v", items[0].op.Security)
+	}
+}
+
+func TestGeneratorRejectsEmptyPathsWithoutReplacingOutput(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "empty.yaml")
+	outPath := filepath.Join(dir, "generated.go")
+	if err := os.WriteFile(specPath, []byte("openapi: 3.0.0\npaths: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(outPath, []byte("existing generated catalog\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	output, err := exec.Command("go", "run", ".", "-spec", specPath, "-out", outPath).CombinedOutput()
+	if err == nil || !strings.Contains(string(output), "no API operations found") {
+		t.Fatalf("generator error = %v, output = %s", err, output)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := string(data); got != "existing generated catalog\n" {
+		t.Fatalf("output changed to %q", got)
+	}
+}
+
+func TestGeneratorWritesOperations(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "catalog.yaml")
+	outPath := filepath.Join(dir, "generated.go")
+	spec := "openapi: 3.0.0\npaths:\n  /api/v1/courses:\n    get:\n      operationId: courses.index\n"
+	if err := os.WriteFile(specPath, []byte(spec), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if output, err := exec.Command("go", "run", ".", "-spec", specPath, "-out", outPath).CombinedOutput(); err != nil {
+		t.Fatalf("generator failed: %v\n%s", err, output)
+	}
+	data, err := os.ReadFile(outPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `ID: "courses.index"`) {
+		t.Fatalf("generated catalog missing operation: %s", data)
 	}
 }

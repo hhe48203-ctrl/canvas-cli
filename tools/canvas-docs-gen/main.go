@@ -136,6 +136,9 @@ func main() {
 			doc.Paths[path][method] = op
 		}
 	}
+	if len(doc.Paths) == 0 {
+		fatal("no API paths extracted from documentation")
+	}
 
 	encoded, err := yaml.Marshal(doc)
 	if err != nil {
