@@ -52,8 +52,10 @@ func TestResolveReturnsNormalizedBaseURL(t *testing.T) {
 
 func TestResolveBaseURLPrecedence(t *testing.T) {
 	home := t.TempDir()
+	configDir := filepath.Join(home, "config")
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("AppData", configDir)
 	t.Setenv("CANVAS_BASE_URL", "https://environment.test/canvas")
 	if err := SaveBaseURL("https://saved.test/canvas"); err != nil {
 		t.Fatal(err)

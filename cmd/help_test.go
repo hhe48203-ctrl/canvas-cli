@@ -163,8 +163,10 @@ func TestCanvasLMSSkillIsInstallableAndLinked(t *testing.T) {
 	}
 	resetCommandGlobals(t)
 	home := t.TempDir()
+	configDir := filepath.Join(home, "config")
 	t.Setenv("HOME", home)
-	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
+	t.Setenv("XDG_CONFIG_HOME", configDir)
+	t.Setenv("AppData", configDir)
 	t.Setenv("CANVAS_BASE_URL", "")
 	t.Setenv("CANVAS_API_TOKEN", "")
 	root := newRootCommand()
