@@ -109,6 +109,17 @@ func TestAPIInvokeHelpCoversGenericRequestModes(t *testing.T) {
 	}
 }
 
+func TestAssignmentSubmitHasDryRun(t *testing.T) {
+	root := newRootCommand()
+	submit, _, err := root.Find([]string{"assignments", "submit"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if submit.Flags().Lookup("dry-run") == nil {
+		t.Fatal("assignments submit is missing --dry-run")
+	}
+}
+
 func TestOperationIDsUsedByHelpExist(t *testing.T) {
 	for _, id := range []string{"courses.list", "context_modules_api.index", "wiki_pages_api.create"} {
 		if _, ok := api.Find(id); !ok {

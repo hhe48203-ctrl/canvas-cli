@@ -136,6 +136,110 @@ func TestAPIInvokeDryRunValidatesParametersWithoutHTTP(t *testing.T) {
 	}
 }
 
+func TestAssignmentDryRunPreviewsSubmissionModesWithoutHTTP(t *testing.T) {
+	resetCommandGlobals(t)
+	filePath := filepath.Join(t.TempDir(), "answer.pdf")
+	if err := os.WriteFile(filePath, []byte("homework"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer server.Close()
+	t.Setenv("CANVAS_BASE_URL", server.URL)
+	t.Setenv("CANVAS_API_TOKEN", "token")
+
+	tests := []struct {
+		name, submissionType, text, url string
+		args                            []string
+	}{
+		{"file", "online_upload", "", "", []string{"assignments", "submit", "course/1", "assignment/2", "--file", filePath, "--comment", "final", "--dry-run", "--json"}},
+		{"text", "online_text_entry", "<p>answer</p>", "", []string{"assignments", "submit", "course/1", "assignment/2", "--text", "<p>answer</p>", "--dry-run", "--json"}},
+		{"url", "online_url", "", "https://example.test/answer", []string{"assignments", "submit", "course/1", "assignment/2", "--url", "https://example.test/answer", "--dry-run", "--json"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			root := newRootCommand()
+			root.SetArgs(test.args)
+			data, err := captureCommandOutput(t, root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var envelope struct {
+				OK   bool `json:"ok"`
+				Data struct {
+					DryRun         bool   `json:"dry_run"`
+					CourseID       string `json:"course_id"`
+					AssignmentID   string `json:"assignment_id"`
+					Target         string `json:"target"`
+					SubmissionType string `json:"submission_type"`
+					Text           string `json:"text"`
+					URL            string `json:"url"`
+					Comment        string `json:"comment"`
+					Files          []struct {
+						Name              string `json:"name"`
+						Size              int64  `json:"size"`
+						UploadRequired    bool   `json:"upload_required"`
+						RemoteIDAvailable bool   `json:"remote_id_available"`
+					} `json:"files"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(data, &envelope); err != nil {
+				t.Fatal(err)
+			}
+			preview := envelope.Data
+			if !envelope.OK || !preview.DryRun || preview.CourseID != "course/1" || preview.AssignmentID != "assignment/2" ||
+				preview.Target != "/api/v1/courses/course%2F1/assignments/assignment%2F2/submissions/self" ||
+				preview.SubmissionType != test.submissionType || preview.Text != test.text || preview.URL != test.url {
+				t.Fatalf("preview = %#v", preview)
+			}
+			if test.name == "file" {
+				if preview.Comment != "final" || len(preview.Files) != 1 || preview.Files[0].Name != "answer.pdf" ||
+					preview.Files[0].Size != int64(len("homework")) || !preview.Files[0].UploadRequired || preview.Files[0].RemoteIDAvailable {
+					t.Fatalf("file preview = %#v", preview.Files)
+				}
+			}
+		})
+	}
+	if requests != 0 {
+		t.Fatalf("requests = %d; want 0", requests)
+	}
+}
+
+func TestAssignmentDryRunUsesYAMLAndValidatesBeforeHTTP(t *testing.T) {
+	resetCommandGlobals(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer server.Close()
+	t.Setenv("CANVAS_BASE_URL", server.URL)
+	t.Setenv("CANVAS_API_TOKEN", "token")
+
+	root := newRootCommand()
+	root.SetArgs([]string{"--yaml", "assignments", "submit", "1", "2", "--url", "https://example.test/answer", "--dry-run"})
+	data, err := captureCommandOutput(t, root)
+	if err != nil || !strings.Contains(string(data), "dry_run: true") || !strings.Contains(string(data), "submission_type: online_url") {
+		t.Fatalf("YAML preview = %s, error = %v", data, err)
+	}
+
+	for _, test := range []struct {
+		name, want string
+		args       []string
+	}{
+		{"conflicting modes", "exactly one", []string{"assignments", "submit", "1", "2", "--text", "answer", "--url", "https://example.test", "--dry-run"}},
+		{"invalid file", "file", []string{"assignments", "submit", "1", "2", "--file", filepath.Join(t.TempDir(), "missing.pdf"), "--dry-run"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := newRootCommand()
+			root.SetArgs(test.args)
+			if _, err := captureCommandOutput(t, root); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("error = %v", err)
+			}
+		})
+	}
+	if requests != 0 {
+		t.Fatalf("requests = %d; want 0", requests)
+	}
+}
+
 func TestAPIInvokePaginationForwardsHeadersOnlySameOrigin(t *testing.T) {
 	resetCommandGlobals(t)
 	discardCommandOutput(t)
