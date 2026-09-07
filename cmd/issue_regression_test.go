@@ -119,7 +119,7 @@ func TestAPIInvokeDryRunSupportsOperationIDsAndYAML(t *testing.T) {
 	t.Setenv("CANVAS_BASE_URL", "")
 	t.Setenv("CANVAS_API_TOKEN", "")
 	root := newRootCommand()
-	root.SetArgs([]string{"--yaml", "api", "invoke", "courses.show", "--path", "id=123", "--dry-run"})
+	root.SetArgs([]string{"--yaml", "api", "invoke", "courses.show", "--path", "course_id=123", "--dry-run"})
 	data, err := captureCommandOutput(t, root)
 	if err != nil {
 		t.Fatal(err)

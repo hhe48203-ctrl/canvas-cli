@@ -59,3 +59,42 @@ func TestGeneratedOperationsContainUsefulHelpMetadata(t *testing.T) {
 	}
 	t.Fatal("context_modules_api.create not found")
 }
+
+func TestStableAliasReusesGeneratedMetadata(t *testing.T) {
+	alias, ok := Find("courses.list")
+	if !ok {
+		t.Fatal("courses.list not found")
+	}
+	generated, ok := Find("courses.index")
+	if !ok {
+		t.Fatal("courses.index not found")
+	}
+	if alias.ID != "courses.list" || alias.Method != "GET" || alias.Path != "/api/v1/courses" ||
+		alias.DocsURL != generated.DocsURL || alias.Description != generated.Description {
+		t.Fatalf("alias = %#v", alias)
+	}
+	found := false
+	for _, parameter := range alias.ParametersIn("query") {
+		if parameter.Name == "enrollment_type" {
+			found = true
+			if len(parameter.Enum) == 0 || parameter.Description == "" {
+				t.Fatalf("enrollment_type = %#v", parameter)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Fatal("courses.list is missing enrollment_type")
+	}
+	show, ok := Find("courses.show")
+	if !ok || show.Path != "/api/v1/courses/{course_id}" || len(show.ParametersIn("path")) != 1 || show.ParametersIn("path")[0].Name != "course_id" {
+		t.Fatalf("courses.show = %#v", show)
+	}
+}
+
+func TestUnmappedAliasRetainsFallback(t *testing.T) {
+	op, ok := Find("me")
+	if !ok || op.Method != "GET" || op.Path != "/api/v1/users/self" || op.DocsURL != "" {
+		t.Fatalf("me = %#v", op)
+	}
+}

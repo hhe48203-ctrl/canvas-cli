@@ -54,6 +54,24 @@ var FallbackOperations = []Operation{
 	{ID: "quiz-submissions.questions", Method: "GET", Path: "/api/v1/quiz_submissions/{quiz_submission_id}/questions", Summary: "List quiz submission questions", PathParams: []string{"quiz_submission_id"}},
 }
 
+var generatedAliasIDs = map[string]string{
+	"courses.list":               "courses.index",
+	"courses.show":               "courses.show",
+	"assignments.list":           "assignments_api.index",
+	"assignments.show":           "assignments_api.show",
+	"calendar.list":              "calendar_events_api.index",
+	"files.list":                 "files.api_index",
+	"submissions.list":           "submissions_api.for_students",
+	"quizzes.list":               "quizzes/quizzes_api.index",
+	"quizzes.start":              "quizzes/quiz_submissions_api.create",
+	"quiz-submissions.questions": "quizzes/quiz_submission_questions.index",
+}
+
+var aliasParameterNames = map[string]map[string]string{
+	"courses.show":     {"id": "course_id"},
+	"assignments.show": {"id": "assignment_id"},
+}
+
 func (op Operation) ParametersIn(location string) []Parameter {
 	var result []Parameter
 	for _, parameter := range op.Parameters {
@@ -80,17 +98,50 @@ func (op Operation) ParametersIn(location string) []Parameter {
 var Operations = buildOperations()
 
 func buildOperations() []Operation {
-	result := append([]Operation(nil), GeneratedOperations...)
+	generated := make(map[string]Operation, len(GeneratedOperations))
+	hidden := map[string]bool{}
+	for alias, id := range generatedAliasIDs {
+		if alias == id {
+			hidden[id] = true
+		}
+	}
+	result := make([]Operation, 0, len(GeneratedOperations)+len(FallbackOperations))
 	seen := map[string]bool{}
-	for _, op := range result {
+	for _, op := range GeneratedOperations {
+		generated[op.ID] = op
+		if hidden[op.ID] {
+			continue
+		}
+		result = append(result, op)
 		seen[op.ID] = true
 	}
 	for _, op := range FallbackOperations {
+		if generatedID, ok := generatedAliasIDs[op.ID]; ok {
+			if generatedOp, ok := generated[generatedID]; ok {
+				result = append(result, aliasMetadata(op, generatedOp))
+				seen[op.ID] = true
+				continue
+			}
+		}
 		if !seen[op.ID] {
 			result = append(result, op)
 		}
 	}
 	return result
+}
+
+func aliasMetadata(alias, generated Operation) Operation {
+	generated.ID, generated.Method, generated.Path = alias.ID, alias.Method, alias.Path
+	generated.PathParams, generated.QueryParams = alias.PathParams, alias.QueryParams
+	if names := aliasParameterNames[alias.ID]; len(names) > 0 {
+		generated.Parameters = append([]Parameter(nil), generated.Parameters...)
+		for i := range generated.Parameters {
+			if name, ok := names[generated.Parameters[i].Name]; ok {
+				generated.Parameters[i].Name = name
+			}
+		}
+	}
+	return generated
 }
 
 func Find(id string) (Operation, bool) {
