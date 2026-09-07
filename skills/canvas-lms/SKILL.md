@@ -46,9 +46,10 @@ canvas assignments submit COURSE_ID ASSIGNMENT_ID \
 
 Search the bundled catalog, inspect the selected operation, then invoke it.
 Use a dry run before a write and never include a token in a command:
+Replace `COURSE_ID` with an ID returned by a previous Canvas response.
 
 ```bash
 canvas api search modules --json
 canvas api describe context_modules_api.index --json
-canvas api invoke context_modules_api.index --dry-run --json
+canvas api invoke context_modules_api.index --path course_id=COURSE_ID --dry-run --json
 ```

@@ -152,7 +152,7 @@ func TestCanvasLMSSkillIsInstallableAndLinked(t *testing.T) {
 	}
 	for _, required := range []string{
 		"canvas auth status", "CANVAS_API_TOKEN", "--dry-run", "--confirm",
-		"canvas api search modules", "canvas api describe context_modules_api.index", "canvas api invoke context_modules_api.index",
+		"canvas api search modules", "canvas api describe context_modules_api.index", "canvas api invoke context_modules_api.index --path course_id=COURSE_ID", "returned by a previous Canvas response",
 	} {
 		if !strings.Contains(string(data), required) {
 			t.Errorf("skill is missing %q", required)
@@ -160,6 +160,29 @@ func TestCanvasLMSSkillIsInstallableAndLinked(t *testing.T) {
 	}
 	if _, ok := api.Find("context_modules_api.index"); !ok {
 		t.Fatal("skill references an unknown operation ID")
+	}
+	resetCommandGlobals(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CANVAS_BASE_URL", "")
+	t.Setenv("CANVAS_API_TOKEN", "")
+	root := newRootCommand()
+	root.SetArgs([]string{"--json", "api", "invoke", "context_modules_api.index", "--path", "course_id=synthetic-course", "--dry-run"})
+	output, err := captureCommandOutput(t, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		OK   bool `json:"ok"`
+		Data struct {
+			Target         string `json:"target"`
+			TargetResolved bool   `json:"target_resolved"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(output, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if !envelope.OK || envelope.Data.Target != "/api/v1/courses/synthetic-course/modules" || envelope.Data.TargetResolved {
+		t.Fatalf("skill dry run = %#v", envelope)
 	}
 	for _, readme := range []string{"README.md", "README.zh-CN.md"} {
 		readmeData, err := os.ReadFile(filepath.Join("..", readme))
