@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bytes"
+	"go/parser"
+	"go/token"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -125,5 +128,52 @@ func TestGeneratorWritesOperations(t *testing.T) {
 	}
 	if !strings.Contains(string(data), `ID: "courses.index"`) {
 		t.Fatalf("generated catalog missing operation: %s", data)
+	}
+}
+
+func TestCatalogGenerationPipeline(t *testing.T) {
+	dir := t.TempDir()
+	specPath := filepath.Join(dir, "catalog.yaml")
+	firstPath := filepath.Join(dir, "generated-first.go")
+	secondPath := filepath.Join(dir, "generated-second.go")
+	fixturePath := filepath.Join("..", "testdata", "catalog.html")
+	const sourceURL = "https://docs.example.test/canvas"
+	if output, err := exec.Command("go", "run", "../canvas-docs-gen", "-html", fixturePath, "-out", specPath, "-source-url", sourceURL).CombinedOutput(); err != nil {
+		t.Fatalf("canvas-docs-gen failed: %v\n%s", err, output)
+	}
+	for _, outPath := range []string{firstPath, secondPath} {
+		if output, err := exec.Command("go", "run", ".", "-spec", specPath, "-out", outPath).CombinedOutput(); err != nil {
+			t.Fatalf("openapi-gen failed: %v\n%s", err, output)
+		}
+	}
+	first, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := os.ReadFile(secondPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(first, second) {
+		t.Fatal("generation is not deterministic")
+	}
+	if _, err := parser.ParseFile(token.NewFileSet(), firstPath, first, parser.AllErrors); err != nil {
+		t.Fatalf("generated catalog is not parseable: %v", err)
+	}
+	generated := string(first)
+	for _, expected := range []string{
+		`{ID: "pages.index", Method: "GET", Path: "/api/v1/courses/{course_id}/pages"`,
+		`{ID: "pages.create", Method: "POST", Path: "/api/v1/courses/{course_id}/pages"`,
+		`{Name: "course_id", In: "path", Required: true, Type: "string"`,
+		`{Name: "include[]", In: "query", Required: false, Type: "array"`,
+		`{Name: "wiki_page[title]", In: "body", Required: true, Type: "string"`,
+		`RequestBody: &RequestBody{Required: true`,
+		`"application/x-www-form-urlencoded"`,
+		`DocsURL: "https://docs.example.test/canvas#method.pages.index"`,
+		`DocsURL: "https://docs.example.test/canvas#method.pages.create"`,
+	} {
+		if !strings.Contains(generated, expected) {
+			t.Errorf("generated catalog is missing %q", expected)
+		}
 	}
 }
