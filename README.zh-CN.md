@@ -62,40 +62,13 @@ Git 提交。
 
 ## Agent Skill
 
-可以添加下面这样的 `SKILL.md`，让 Agent 遵循安全流程：
+[`skills/canvas-lms/SKILL.md`](skills/canvas-lms/SKILL.md) 是包含这套流程的
+独立 Skill 文件。将它复制到任意支持 Skill 的 Agent 环境中的 `canvas-lms`
+技能目录即可。以 Codex 为例，在当前仓库目录运行：
 
-```markdown
----
-name: canvas-lms
-description: 通过 canvas CLI 使用 Canvas LMS，处理课程、作业、文件、提交和 Quiz。
----
-
-# Canvas LMS
-
-处理 Canvas 任务时优先使用 `canvas`，不要操作网页。
-
-规则：
-- 第一次请求前运行 `canvas auth status`。
-- 优先使用 `--json`，使用返回的 ID，不猜测 ID。
-- 准备答案前先读取作业或 Quiz 详情。
-- 所有写操作前展示目标和提交内容。
-- 只有用户明确批准后才添加 `--confirm`。
-- 不得索取或显示 `CANVAS_API_TOKEN`。
-
-常用读取：
-    canvas courses list --all-pages --json
-    canvas assignments list COURSE_ID --all-pages --json
-    canvas assignments show COURSE_ID ASSIGNMENT_ID --json
-    canvas files list COURSE_ID --all-pages --json
-
-用户批准后提交：
-    canvas assignments submit COURSE_ID ASSIGNMENT_ID \
-      --file answer.pdf --confirm --json
-
-调用其他端点：
-    canvas api search KEYWORD
-    canvas api describe OPERATION_ID
-    canvas api invoke OPERATION_ID --json
+```bash
+mkdir -p "$HOME/.codex/skills/canvas-lms"
+cp skills/canvas-lms/SKILL.md "$HOME/.codex/skills/canvas-lms/SKILL.md"
 ```
 
 例如，可以直接对 Agent 说：

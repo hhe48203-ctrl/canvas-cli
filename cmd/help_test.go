@@ -6,12 +6,14 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/hhe48203-ctrl/canvas-cli/internal/api"
 	"github.com/hhe48203-ctrl/canvas-cli/internal/canvas"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func TestEveryUserCommandHasClearHelpAndExamples(t *testing.T) {
@@ -124,6 +126,48 @@ func TestOperationIDsUsedByHelpExist(t *testing.T) {
 	for _, id := range []string{"courses.list", "context_modules_api.index", "wiki_pages_api.create"} {
 		if _, ok := api.Find(id); !ok {
 			t.Errorf("help references unknown operation %q", id)
+		}
+	}
+}
+
+func TestCanvasLMSSkillIsInstallableAndLinked(t *testing.T) {
+	skillPath := filepath.Join("..", "skills", "canvas-lms", "SKILL.md")
+	data, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := strings.SplitN(string(data), "---\n", 3)
+	if len(parts) != 3 || parts[0] != "" {
+		t.Fatalf("invalid skill frontmatter: %s", data)
+	}
+	var frontmatter struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+	}
+	if err := yaml.Unmarshal([]byte(parts[1]), &frontmatter); err != nil {
+		t.Fatal(err)
+	}
+	if frontmatter.Name != "canvas-lms" || frontmatter.Description == "" {
+		t.Fatalf("frontmatter = %#v", frontmatter)
+	}
+	for _, required := range []string{
+		"canvas auth status", "CANVAS_API_TOKEN", "--dry-run", "--confirm",
+		"canvas api search modules", "canvas api describe context_modules_api.index", "canvas api invoke context_modules_api.index",
+	} {
+		if !strings.Contains(string(data), required) {
+			t.Errorf("skill is missing %q", required)
+		}
+	}
+	if _, ok := api.Find("context_modules_api.index"); !ok {
+		t.Fatal("skill references an unknown operation ID")
+	}
+	for _, readme := range []string{"README.md", "README.zh-CN.md"} {
+		readmeData, err := os.ReadFile(filepath.Join("..", readme))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(readmeData), "skills/canvas-lms/SKILL.md") {
+			t.Errorf("%s does not link the skill", readme)
 		}
 	}
 }

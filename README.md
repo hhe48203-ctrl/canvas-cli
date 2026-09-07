@@ -65,40 +65,13 @@ files, command arguments, or commits.
 
 ## Agent Skill
 
-Add a `SKILL.md` like the following to teach an agent the safe workflow:
+[`skills/canvas-lms/SKILL.md`](skills/canvas-lms/SKILL.md) is a standalone
+skill with this workflow. Copy it into the `canvas-lms` skill folder for any
+skill-supporting agent environment. For Codex, from this checkout:
 
-```markdown
----
-name: canvas-lms
-description: Use Canvas LMS through the canvas CLI for courses, assignments, files, submissions, and quizzes.
----
-
-# Canvas LMS
-
-Use `canvas` instead of browser automation when working with Canvas.
-
-Rules:
-- Run `canvas auth status` before the first request.
-- Prefer `--json`; use returned IDs instead of guessing them.
-- Read assignment or quiz details before preparing an answer.
-- Show the target and payload before any write.
-- Add `--confirm` only after the user explicitly approves the write.
-- Never request or display `CANVAS_API_TOKEN`.
-
-Useful reads:
-    canvas courses list --all-pages --json
-    canvas assignments list COURSE_ID --all-pages --json
-    canvas assignments show COURSE_ID ASSIGNMENT_ID --json
-    canvas files list COURSE_ID --all-pages --json
-
-Submission after approval:
-    canvas assignments submit COURSE_ID ASSIGNMENT_ID \
-      --file answer.pdf --confirm --json
-
-For other endpoints:
-    canvas api search KEYWORD
-    canvas api describe OPERATION_ID
-    canvas api invoke OPERATION_ID --json
+```bash
+mkdir -p "$HOME/.codex/skills/canvas-lms"
+cp skills/canvas-lms/SKILL.md "$HOME/.codex/skills/canvas-lms/SKILL.md"
 ```
 
 Example request:
