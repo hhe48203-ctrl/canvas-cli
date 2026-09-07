@@ -48,15 +48,19 @@ func newCoursesCommand() *cobra.Command {
 }
 
 func getAndEmit(path string) error {
+	query, err := parsePairs(queryArgs, "query")
+	if err != nil {
+		return err
+	}
 	ctx, c, err := contextWithClient()
 	if err != nil {
 		return err
 	}
-	resp, err := c.Request(ctx, http.MethodGet, path, parsePairs(queryArgs), nil, "")
+	resp, err := c.Request(ctx, http.MethodGet, path, query, nil, "")
 	if err != nil {
 		return err
 	}
-	return emitHTTPResponse(ctx, c, resp)
+	return emitHTTPResponse(ctx, c, resp, nil)
 }
 
 func getResourceCommand(use, short, path string) *cobra.Command {

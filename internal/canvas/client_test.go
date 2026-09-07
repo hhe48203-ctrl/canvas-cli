@@ -346,6 +346,23 @@ func TestUploadContentTypeUsesStandardMIMETypes(t *testing.T) {
 	}
 }
 
+func TestValidateUploadFileRequiresRegularReadableFile(t *testing.T) {
+	directory := t.TempDir()
+	filePath := filepath.Join(directory, "notes.txt")
+	if err := os.WriteFile(filePath, []byte("hello"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	info, err := ValidateUploadFile(filePath)
+	if err != nil || info.Size() != int64(len("hello")) {
+		t.Fatalf("ValidateUploadFile() = %#v, %v", info, err)
+	}
+	for _, path := range []string{filepath.Join(directory, "missing.txt"), directory} {
+		if _, err := ValidateUploadFile(path); err == nil {
+			t.Errorf("ValidateUploadFile(%q) succeeded", path)
+		}
+	}
+}
+
 func TestUploadFollowsRedirectWithCanvasAuthentication(t *testing.T) {
 	for _, status := range []int{http.StatusFound, http.StatusCreated} {
 		t.Run(http.StatusText(status), func(t *testing.T) {

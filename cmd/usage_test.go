@@ -197,6 +197,41 @@ func TestUsageCommands(t *testing.T) {
 	}
 }
 
+func TestMalformedKeyValueFlagsUseStructuredErrorsWithoutRequests(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	defer server.Close()
+	t.Setenv("CANVAS_BASE_URL", server.URL)
+	t.Setenv("CANVAS_API_TOKEN", "token")
+
+	for _, flag := range []string{"path", "query", "form", "header"} {
+		for _, format := range []string{"json", "yaml"} {
+			t.Run(flag+"/"+format, func(t *testing.T) {
+				out, stderr, exit := runUsage(t, false, "--"+format, "api", "invoke", "GET", "/api/v1/courses", "--"+flag, "missing")
+				if exit != 1 || out != "" || !strings.Contains(stderr, "--"+flag) {
+					t.Fatalf("output = %q, stderr = %q, exit = %d", out, stderr, exit)
+				}
+				if format == "json" {
+					var envelope struct {
+						OK    bool `json:"ok"`
+						Error struct {
+							Message string `json:"message"`
+						} `json:"error"`
+					}
+					if err := json.Unmarshal([]byte(stderr), &envelope); err != nil || envelope.OK || !strings.Contains(envelope.Error.Message, "--"+flag) {
+						t.Fatalf("JSON error envelope = %q, err = %v", stderr, err)
+					}
+				} else if !strings.Contains(stderr, "ok: false") || !strings.Contains(stderr, "error:") {
+					t.Fatalf("YAML error envelope = %q", stderr)
+				}
+			})
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("requests = %d; want 0", requests)
+	}
+}
+
 func TestUsageFileTransfers(t *testing.T) {
 	dir := isolateUsage(t)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

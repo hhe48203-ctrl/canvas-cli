@@ -41,6 +41,11 @@ func (c *Client) Request(ctx context.Context, method, path string, query url.Val
 	return c.RequestWithHeaders(ctx, method, path, query, body, contentType, nil)
 }
 
+func (c *Client) SameOrigin(path string) bool {
+	target, err := url.Parse(path)
+	return err == nil && (!target.IsAbs() || sameOrigin(target, parsedURL(c.BaseURL)))
+}
+
 func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string, headers http.Header) (Response, error) {
 	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
 		path = c.BaseURL + "/" + strings.TrimLeft(path, "/")
@@ -155,7 +160,7 @@ func (c *Client) Download(ctx context.Context, path, destination string) (int64,
 }
 
 func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[string]any, error) {
-	info, err := os.Stat(filePath)
+	info, err := ValidateUploadFile(filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +197,24 @@ func (c *Client) Upload(ctx context.Context, endpoint, filePath string) (map[str
 		}
 	}
 	return payload, nil
+}
+
+func ValidateUploadFile(filePath string) (os.FileInfo, error) {
+	info, err := os.Stat(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if !info.Mode().IsRegular() {
+		return nil, fmt.Errorf("not a regular file")
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return nil, err
+	}
+	if err := file.Close(); err != nil {
+		return nil, err
+	}
+	return info, nil
 }
 
 func multipartUpload(ctx context.Context, c *Client, endpoint string, params map[string]any, filePath string) ([]byte, error) {

@@ -147,7 +147,7 @@ func TestEmitHTTPResponseCollectsAllPages(t *testing.T) {
 		os.Stdout = oldStdout
 		allPages, format, jsonOutput, yamlOutput, includeHeaders = oldAllPages, oldFormat, oldJSON, oldYAML, oldHeaders
 	})
-	if err := emitHTTPResponse(context.Background(), client, first); err != nil {
+	if err := emitHTTPResponse(context.Background(), client, first, nil); err != nil {
 		t.Fatal(err)
 	}
 	_ = writer.Close()

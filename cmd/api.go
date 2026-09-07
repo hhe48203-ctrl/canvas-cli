@@ -115,6 +115,22 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
     canvas api invoke POST /api/graphql --body - --content-type application/json --confirm`,
 		Args: cobra.RangeArgs(1, 2),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			pathValues, err := parseMap(pathArgs, "path")
+			if err != nil {
+				return err
+			}
+			query, err := parsePairs(queryArgs, "query")
+			if err != nil {
+				return err
+			}
+			form, err := parsePairs(formArgs, "form")
+			if err != nil {
+				return err
+			}
+			headers, err := parseHeaders(headerArgs, "header")
+			if err != nil {
+				return err
+			}
 			method, path := "", ""
 			var selected *api.Operation
 			if op, ok := api.Find(args[0]); ok {
@@ -123,7 +139,7 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 				}
 				method, path = op.Method, op.Path
 				selected = &op
-				provided := parseMap(pathArgs)
+				provided := pathValues
 				for _, parameter := range op.ParametersIn("path") {
 					if _, ok := provided[parameter.Name]; !ok {
 						return fmt.Errorf("missing required path parameter %q; use --path %s=VALUE", parameter.Name, parameter.Name)
@@ -134,7 +150,7 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 				if len(args) != 2 {
 					return fmt.Errorf("unknown operation %q; expected a known OPERATION_ID or METHOD PATH", args[0])
 				}
-				method, path = strings.ToUpper(args[0]), pathWithParams(args[1], parseMap(pathArgs))
+				method, path = strings.ToUpper(args[0]), pathWithParams(args[1], pathValues)
 			}
 			if strings.Contains(path, "{") {
 				return fmt.Errorf("unresolved path parameter in %q; supply each value with --path name=value", path)
@@ -149,8 +165,6 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 				return fmt.Errorf("%w after reviewing the request", errConfirmRequired)
 			}
 
-			query := parsePairs(queryArgs)
-			form := parsePairs(formArgs)
 			if selected != nil {
 				for _, parameter := range selected.ParametersIn("query") {
 					if parameter.Required && !query.Has(parameter.Name) {
@@ -184,11 +198,11 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 			if err != nil {
 				return err
 			}
-			resp, err := c.RequestWithHeaders(ctx, method, path, query, bytes.NewReader(body), contentType, parseHeaders(headerArgs))
+			resp, err := c.RequestWithHeaders(ctx, method, path, query, bytes.NewReader(body), contentType, headers)
 			if err != nil {
 				return err
 			}
-			return emitHTTPResponse(ctx, c, resp)
+			return emitHTTPResponse(ctx, c, resp, headers)
 		},
 	}
 	invoke.Flags().StringArrayVar(&pathArgs, "path", nil, "Path parameter name=value; repeat for every placeholder")

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/hhe48203-ctrl/canvas-cli/internal/canvas"
 	"github.com/spf13/cobra"
 )
 
@@ -55,7 +56,10 @@ func newSubmitAssignmentCommand() *cobra.Command {
 			if count != 1 {
 				return fmt.Errorf("provide exactly one of --file, --text, or --url")
 			}
-			return requireConfirm()
+			if err := requireConfirm(); err != nil {
+				return err
+			}
+			return preflightAssignmentFiles(assignmentFiles)
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, c, err := contextWithClient()
@@ -99,6 +103,15 @@ func newSubmitAssignmentCommand() *cobra.Command {
 	cmd.Flags().StringVar(&comment, "comment", "", "Optional submission comment")
 	cmd.Flags().BoolVar(&confirm, "confirm", false, "Confirm this write operation")
 	return cmd
+}
+
+func preflightAssignmentFiles(filePaths []string) error {
+	for _, filePath := range filePaths {
+		if _, err := canvas.ValidateUploadFile(filePath); err != nil {
+			return fmt.Errorf("file %q: %w", filePath, err)
+		}
+	}
+	return nil
 }
 
 func collectUploadedFileIDs(filePaths []string, upload func(string) (map[string]any, error)) ([]string, error) {

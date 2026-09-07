@@ -152,7 +152,7 @@ func emitRaw(data any) error {
 	return output.Print(data, outputMode())
 }
 
-func emitHTTPResponse(ctx context.Context, c *canvas.Client, resp canvas.Response) error {
+func emitHTTPResponse(ctx context.Context, c *canvas.Client, resp canvas.Response, headers http.Header) error {
 	data := decodeJSON(resp.Body)
 	pages := 1
 	if allPages {
@@ -166,7 +166,11 @@ func emitHTTPResponse(ctx context.Context, c *canvas.Client, resp canvas.Respons
 				return fmt.Errorf("pagination loop detected at %s", next)
 			}
 			seen[next] = true
-			resp, err = c.Request(ctx, http.MethodGet, next, nil, nil, "")
+			nextHeaders := headers
+			if !c.SameOrigin(next) {
+				nextHeaders = nil
+			}
+			resp, err = c.RequestWithHeaders(ctx, http.MethodGet, next, nil, nil, "", nextHeaders)
 			if err != nil {
 				return fmt.Errorf("fetch page %d: %w", pages+1, err)
 			}
@@ -293,39 +297,48 @@ func compoundItemKey(item any) string {
 	return string(data)
 }
 
-func parsePairs(values []string) url.Values {
+func parsePairs(values []string, flag string) (url.Values, error) {
 	result := url.Values{}
 	for _, item := range values {
-		key, value, ok := strings.Cut(item, "=")
-		if !ok {
-			result.Add(item, "")
-			continue
+		key, value, err := parsePair(item, flag)
+		if err != nil {
+			return nil, err
 		}
 		result.Add(key, value)
 	}
-	return result
+	return result, nil
 }
 
-func parseMap(values []string) map[string]string {
+func parseMap(values []string, flag string) (map[string]string, error) {
 	result := map[string]string{}
 	for _, item := range values {
-		key, value, ok := strings.Cut(item, "=")
-		if ok {
-			result[key] = value
+		key, value, err := parsePair(item, flag)
+		if err != nil {
+			return nil, err
 		}
+		result[key] = value
 	}
-	return result
+	return result, nil
 }
 
-func parseHeaders(values []string) http.Header {
+func parseHeaders(values []string, flag string) (http.Header, error) {
 	result := http.Header{}
 	for _, item := range values {
-		key, value, ok := strings.Cut(item, "=")
-		if ok {
-			result.Add(key, value)
+		key, value, err := parsePair(item, flag)
+		if err != nil {
+			return nil, err
 		}
+		result.Add(key, value)
 	}
-	return result
+	return result, nil
+}
+
+func parsePair(item, flag string) (string, string, error) {
+	key, value, ok := strings.Cut(item, "=")
+	if !ok || key == "" {
+		return "", "", fmt.Errorf("invalid --%s value %q: expected key=value", flag, item)
+	}
+	return key, value, nil
 }
 
 func decodeJSON(data []byte) any {
