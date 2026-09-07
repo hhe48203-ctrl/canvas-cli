@@ -152,6 +152,148 @@ func TestRequestReturnsHTTPError(t *testing.T) {
 	}
 }
 
+func TestRequestRetriesTransientReadRequests(t *testing.T) {
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		for _, status := range []int{http.StatusTooManyRequests, http.StatusServiceUnavailable} {
+			t.Run(method+"/"+http.StatusText(status), func(t *testing.T) {
+				requests := 0
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requests++
+					if requests == 1 {
+						w.Header().Set("Retry-After", "0")
+						w.WriteHeader(status)
+						return
+					}
+					_, _ = w.Write([]byte(`{"ok":true}`))
+				}))
+				defer server.Close()
+
+				if _, err := NewClient(server.URL, "token").Request(context.Background(), method, "/api/v1/courses", nil, nil, ""); err != nil {
+					t.Fatal(err)
+				}
+				if requests != 2 {
+					t.Fatalf("requests = %d; want 2", requests)
+				}
+			})
+		}
+	}
+}
+
+func TestRequestReturnsFinalTransientErrorAfterRetryLimit(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		w.Header().Set("Retry-After", "0")
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+
+	_, err := NewClient(server.URL, "token").Request(context.Background(), http.MethodGet, "/api/v1/courses", nil, nil, "")
+	var httpErr *HTTPError
+	if !errors.As(err, &httpErr) || httpErr.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("error = %v", err)
+	}
+	if requests != maxRequestAttempts {
+		t.Fatalf("requests = %d; want %d", requests, maxRequestAttempts)
+	}
+}
+
+func TestRequestDoesNotRetryPermanentErrorsOrWrites(t *testing.T) {
+	for _, test := range []struct {
+		name, method string
+		status       int
+		body         string
+	}{
+		{"bad request", http.MethodGet, http.StatusBadRequest, ""},
+		{"unauthorized", http.MethodGet, http.StatusUnauthorized, ""},
+		{"forbidden", http.MethodGet, http.StatusForbidden, ""},
+		{"not found", http.MethodGet, http.StatusNotFound, ""},
+		{"write", http.MethodPost, http.StatusServiceUnavailable, "payload"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				w.WriteHeader(test.status)
+			}))
+			defer server.Close()
+			var body io.Reader
+			if test.body != "" {
+				body = strings.NewReader(test.body)
+			}
+			if _, err := NewClient(server.URL, "token").Request(context.Background(), test.method, "/api/v1/courses", nil, body, ""); err == nil {
+				t.Fatal("expected HTTP error")
+			}
+			if requests != 1 {
+				t.Fatalf("requests = %d; want 1", requests)
+			}
+		})
+	}
+}
+
+func TestRequestDoesNotRetryBeyondRetryAfterBudget(t *testing.T) {
+	for _, retryAfter := range []string{"60", time.Now().Add(time.Hour).UTC().Format(http.TimeFormat)} {
+		t.Run(retryAfter, func(t *testing.T) {
+			requests := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests++
+				w.Header().Set("Retry-After", retryAfter)
+				w.WriteHeader(http.StatusServiceUnavailable)
+			}))
+			defer server.Close()
+			if _, err := NewClient(server.URL, "token").Request(context.Background(), http.MethodGet, "/api/v1/courses", nil, nil, ""); err == nil {
+				t.Fatal("expected HTTP error")
+			}
+			if requests != 1 {
+				t.Fatalf("requests = %d; want 1", requests)
+			}
+		})
+	}
+}
+
+func TestRequestCancellationInterruptsRetryWait(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	requests := 0
+	client := NewClient("https://canvas.test", "token")
+	client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		response := testResponse(request, http.StatusServiceUnavailable, http.Header{"Retry-After": {"1"}})
+		response.Body = cancelOnClose{Reader: strings.NewReader("retry"), cancel: cancel}
+		return response, nil
+	})
+	_, err := client.Request(ctx, http.MethodGet, "/api/v1/courses", nil, nil, "")
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("error = %v; want context cancellation", err)
+	}
+	if requests != 1 {
+		t.Fatalf("requests = %d; want 1", requests)
+	}
+}
+
+func TestRequestClosesResponsesBeforeRetrying(t *testing.T) {
+	first, second := &trackedReadCloser{Reader: strings.NewReader("retry")}, &trackedReadCloser{Reader: strings.NewReader("ok")}
+	requests := 0
+	client := NewClient("https://canvas.test", "token")
+	client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		requests++
+		if requests == 1 {
+			response := testResponse(request, http.StatusServiceUnavailable, http.Header{"Retry-After": {"0"}})
+			response.Body = first
+			return response, nil
+		}
+		response := testResponse(request, http.StatusOK, nil)
+		response.Body = second
+		return response, nil
+	})
+	if _, err := client.Request(context.Background(), http.MethodGet, "/api/v1/courses", nil, nil, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !first.closed || !second.closed {
+		t.Fatalf("response bodies closed = %t, %t", first.closed, second.closed)
+	}
+}
+
 func TestDownloadDoesNotReplaceDestinationWithPartialContent(t *testing.T) {
 	directory := t.TempDir()
 	destination := filepath.Join(directory, "lecture.pdf")
@@ -427,4 +569,24 @@ type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) {
 	return 0, errors.New("download interrupted")
+}
+
+type trackedReadCloser struct {
+	io.Reader
+	closed bool
+}
+
+func (r *trackedReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
+
+type cancelOnClose struct {
+	io.Reader
+	cancel context.CancelFunc
+}
+
+func (r cancelOnClose) Close() error {
+	r.cancel()
+	return nil
 }

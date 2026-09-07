@@ -31,6 +31,12 @@ type Response struct {
 	Body       []byte
 }
 
+const (
+	maxRequestAttempts = 3
+	retryWaitBudget    = time.Second
+	retryFallback      = 100 * time.Millisecond
+)
+
 func NewClient(baseURL, token string) *Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 60 * time.Second
@@ -50,46 +56,111 @@ func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, qu
 	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
 		path = c.BaseURL + "/" + strings.TrimLeft(path, "/")
 	}
-	req, err := http.NewRequestWithContext(ctx, method, path, body)
-	if err != nil {
-		return Response{}, err
-	}
-	if query != nil {
-		merged := req.URL.Query()
-		for key, values := range query {
+	newRequest := func() (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, method, path, body)
+		if err != nil {
+			return nil, err
+		}
+		if query != nil {
+			merged := req.URL.Query()
+			for key, values := range query {
+				for _, value := range values {
+					merged.Add(key, value)
+				}
+			}
+			req.URL.RawQuery = merged.Encode()
+		}
+		req.Header.Set("Accept", "application/json")
+		for key, values := range headers {
 			for _, value := range values {
-				merged.Add(key, value)
+				req.Header.Add(key, value)
 			}
 		}
-		req.URL.RawQuery = merged.Encode()
-	}
-	req.Header.Set("Accept", "application/json")
-	for key, values := range headers {
-		for _, value := range values {
-			req.Header.Add(key, value)
+		if c.Token != "" && sameOrigin(req.URL, parsedURL(c.BaseURL)) {
+			req.Header.Set("Authorization", "Bearer "+c.Token)
 		}
+		if contentType != "" {
+			req.Header.Set("Content-Type", contentType)
+		}
+		return req, nil
 	}
-	if c.Token != "" && sameOrigin(req.URL, parsedURL(c.BaseURL)) {
-		req.Header.Set("Authorization", "Bearer "+c.Token)
+	req, err := newRequest()
+	if err != nil {
+		return Response{}, err
 	}
-	if contentType != "" {
-		req.Header.Set("Content-Type", contentType)
+	attempts := 1
+	if (req.Method == http.MethodGet || req.Method == http.MethodHead) && (req.Body == nil || req.Body == http.NoBody) {
+		attempts = maxRequestAttempts
 	}
+	remainingWait := retryWaitBudget
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			req, err = newRequest()
+			if err != nil {
+				return Response{}, err
+			}
+		}
+		resp, err := c.do(req)
+		if err != nil {
+			return Response{}, err
+		}
+		data, readErr := io.ReadAll(resp.Body)
+		_ = resp.Body.Close()
+		if readErr != nil {
+			return Response{}, readErr
+		}
+		result := Response{StatusCode: resp.StatusCode, Headers: resp.Header.Clone(), Body: data}
+		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return result, nil
+		}
+		httpErr := &HTTPError{StatusCode: resp.StatusCode, Body: data}
+		if attempt+1 == attempts || !retryableStatus(resp.StatusCode) {
+			return result, httpErr
+		}
+		delay := retryDelay(resp.Header, time.Now())
+		if delay > remainingWait {
+			return result, httpErr
+		}
+		if err := waitForRetry(ctx, delay); err != nil {
+			return result, err
+		}
+		remainingWait -= delay
+	}
+	return Response{}, nil
+}
 
-	resp, err := c.do(req)
-	if err != nil {
-		return Response{}, err
+func retryableStatus(status int) bool {
+	switch status {
+	case http.StatusTooManyRequests, http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	default:
+		return false
 	}
-	defer resp.Body.Close()
-	data, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return Response{}, err
+}
+
+func retryDelay(headers http.Header, now time.Time) time.Duration {
+	retryAfter := headers.Get("Retry-After")
+	if seconds, err := strconv.ParseInt(retryAfter, 10, 64); err == nil && seconds >= 0 {
+		if seconds > int64(retryWaitBudget/time.Second) {
+			return retryWaitBudget + time.Second
+		}
+		return time.Duration(seconds) * time.Second
 	}
-	result := Response{StatusCode: resp.StatusCode, Headers: resp.Header.Clone(), Body: data}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return result, &HTTPError{StatusCode: resp.StatusCode, Body: data}
+	if when, err := http.ParseTime(retryAfter); err == nil {
+		return max(0, when.Sub(now))
 	}
-	return result, nil
+	return retryFallback
+}
+
+func waitForRetry(ctx context.Context, delay time.Duration) error {
+	timer := time.NewTimer(delay)
+	defer timer.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-timer.C:
+		return nil
+	}
 }
 
 func (c *Client) JSON(ctx context.Context, method, path string, query url.Values, payload any) (Response, error) {
