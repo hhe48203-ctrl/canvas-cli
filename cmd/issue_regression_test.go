@@ -284,6 +284,62 @@ func TestAPIInvokePaginationForwardsHeadersOnlySameOrigin(t *testing.T) {
 	}
 }
 
+func TestAPIInvokePaginationRedirectStripsCallerHeaders(t *testing.T) {
+	resetCommandGlobals(t)
+	discardCommandOutput(t)
+
+	foreign := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		for _, name := range []string{"X-Review-Secret", "Cookie", "Authorization"} {
+			if got := r.Header.Get(name); got != "" {
+				t.Errorf("foreign %s = %q", name, got)
+			}
+		}
+		switch r.URL.Path {
+		case "/last":
+			w.Header().Set("Location", "/final")
+			w.WriteHeader(http.StatusFound)
+		case "/final":
+			_, _ = w.Write([]byte(`[{"id":2}]`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer foreign.Close()
+
+	var canvasServer *httptest.Server
+	canvasServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/first":
+			w.Header().Set("Link", "<"+canvasServer.URL+"/redirect>; rel=\"next\"")
+			_, _ = w.Write([]byte(`[{"id":1}]`))
+		case "/redirect", "/same-origin":
+			if got := r.Header.Get("X-Review-Secret"); got != "synthetic-header-value" {
+				t.Errorf("same-origin custom header = %q", got)
+			}
+			if got := r.Header.Get("Cookie"); got != "synthetic-cookie" {
+				t.Errorf("same-origin cookie = %q", got)
+			}
+			if r.URL.Path == "/redirect" {
+				w.Header().Set("Location", "/same-origin")
+			} else {
+				w.Header().Set("Location", foreign.URL+"/last")
+			}
+			w.WriteHeader(http.StatusFound)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer canvasServer.Close()
+	t.Setenv("CANVAS_BASE_URL", canvasServer.URL)
+	t.Setenv("CANVAS_API_TOKEN", "token")
+
+	root := newRootCommand()
+	root.SetArgs([]string{"api", "invoke", "GET", "/first", "--all-pages", "--header", "X-Review-Secret=synthetic-header-value", "--header", "Cookie=synthetic-cookie"})
+	if err := root.Execute(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestAssignmentFilePreflightStopsBeforeFirstUpload(t *testing.T) {
 	resetCommandGlobals(t)
 	discardCommandOutput(t)

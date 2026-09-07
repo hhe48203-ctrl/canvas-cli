@@ -100,7 +100,7 @@ func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, qu
 				return Response{}, err
 			}
 		}
-		resp, err := c.do(req)
+		resp, err := c.do(req, headers)
 		if err != nil {
 			return Response{}, err
 		}
@@ -191,7 +191,7 @@ func (c *Client) Download(ctx context.Context, path, destination string) (int64,
 	if c.Token != "" && sameOrigin(req.URL, parsedURL(c.BaseURL)) {
 		req.Header.Set("Authorization", "Bearer "+c.Token)
 	}
-	resp, err := c.do(req)
+	resp, err := c.do(req, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -515,7 +515,7 @@ func contentType(path string) string {
 	return mediaType
 }
 
-func (c *Client) do(req *http.Request) (*http.Response, error) {
+func (c *Client) do(req *http.Request, callerHeaders http.Header) (*http.Response, error) {
 	httpClient := c.HTTPClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -526,6 +526,9 @@ func (c *Client) do(req *http.Request) (*http.Response, error) {
 	redirectSafeClient.CheckRedirect = func(next *http.Request, via []*http.Request) error {
 		if !sameOrigin(next.URL, base) {
 			next.Header.Del("Authorization")
+			for name := range callerHeaders {
+				next.Header.Del(name)
+			}
 		}
 		if previousCheck != nil {
 			return previousCheck(next, via)
