@@ -29,6 +29,7 @@ var (
 	pathArgs        []string
 	formArgs        []string
 	confirm         bool
+	dryRun          bool
 	allPages        bool
 	includeHeaders  bool
 	rootCmd         = newRootCommand()
@@ -328,9 +329,36 @@ func parseHeaders(values []string, flag string) (http.Header, error) {
 		if err != nil {
 			return nil, err
 		}
+		if !validHeaderName(key) {
+			return nil, fmt.Errorf("invalid header name %q", key)
+		}
+		if !validHeaderValue(value) {
+			return nil, fmt.Errorf("invalid header value for %q", key)
+		}
 		result.Add(key, value)
 	}
 	return result, nil
+}
+
+func validHeaderName(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, c := range []byte(value) {
+		if !((c >= '0' && c <= '9') || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || strings.ContainsRune("!#$%&'*+-.^_`|~", rune(c))) {
+			return false
+		}
+	}
+	return true
+}
+
+func validHeaderValue(value string) bool {
+	for _, c := range []byte(value) {
+		if (c < ' ' && c != '\t') || c == 0x7f {
+			return false
+		}
+	}
+	return true
 }
 
 func parsePair(item, flag string) (string, string, error) {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"sort"
 	"strings"
@@ -12,6 +13,16 @@ import (
 	"github.com/hhe48203-ctrl/canvas-cli/internal/api"
 	"github.com/spf13/cobra"
 )
+
+type apiRequestPreview struct {
+	DryRun      bool        `json:"dry_run" yaml:"dry_run"`
+	Method      string      `json:"method" yaml:"method"`
+	Target      string      `json:"target" yaml:"target"`
+	Query       url.Values  `json:"query" yaml:"query"`
+	ContentType string      `json:"content_type" yaml:"content_type"`
+	Body        string      `json:"body" yaml:"body"`
+	Headers     http.Header `json:"headers" yaml:"headers"`
+}
 
 func newAPICommand() *cobra.Command {
 	apiCmd := &cobra.Command{
@@ -97,7 +108,8 @@ func newAPIInvokeCommand() *cobra.Command {
 Path parameters for registered operations use --path name=value. Query and form
 flags are repeatable, including array names such as include[]. Use --body for a
 raw JSON or other pre-encoded body; use --body - to read stdin. Canvas list
-responses are paginated, so use --all-pages to follow opaque Link headers.`,
+responses are paginated, so use --all-pages to follow opaque Link headers. Use
+--dry-run to preview the encoded request without a token, confirmation, or HTTP request.`,
 		Example: `  # Registered operation
   canvas api invoke courses.list --query enrollment_type=student --all-pages
 
@@ -107,8 +119,11 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 
   # Standard Canvas form request
   canvas api invoke POST /api/v1/courses/123/pages \
-    --form 'wiki_page[title]=Overview' \
-    --form 'wiki_page[body]=<p>Hello</p>' --confirm
+	--form 'wiki_page[title]=Overview' \
+	--form 'wiki_page[body]=<p>Hello</p>' --confirm
+
+  # Preview a write without --confirm or a configured token
+  canvas api invoke POST /api/v1/courses/123/pages --form 'wiki_page[title]=Overview' --dry-run
 
   # Raw JSON from stdin
   printf '%s' '{"query":"{ course(id: \"123\") { name } }"}' | \
@@ -161,7 +176,7 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 			if method != http.MethodGet && allPages {
 				return fmt.Errorf("--all-pages is only valid for GET requests")
 			}
-			if method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions && !confirm {
+			if method != http.MethodGet && method != http.MethodHead && method != http.MethodOptions && !confirm && !dryRun {
 				return fmt.Errorf("%w after reviewing the request", errConfirmRequired)
 			}
 
@@ -194,6 +209,16 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 			} else if bodyFile != "" {
 				contentType = contentTypeFlag
 			}
+			if contentType != "" && !validHeaderValue(contentType) {
+				return fmt.Errorf("invalid Content-Type value %q", contentType)
+			}
+			if dryRun {
+				preview, err := previewAPIRequest(method, path, query, body, contentType, headers)
+				if err != nil {
+					return err
+				}
+				return emit(preview)
+			}
 			ctx, c, err := contextWithClient()
 			if err != nil {
 				return err
@@ -214,8 +239,60 @@ responses are paginated, so use --all-pages to follow opaque Link headers.`,
 	invoke.Flags().BoolVar(&allPages, "all-pages", false, "Follow Canvas Link headers and combine array or compound-document pages")
 	invoke.Flags().BoolVar(&includeHeaders, "include-headers", false, "Include HTTP status, headers, page count, and data")
 	invoke.Flags().BoolVar(&confirm, "confirm", false, "Confirm POST, PUT, PATCH, or DELETE after reviewing the request")
+	invoke.Flags().BoolVar(&dryRun, "dry-run", false, "Preview the encoded request without confirming or sending it")
 	invoke.MarkFlagsMutuallyExclusive("body", "form")
 	return invoke
+}
+
+func previewAPIRequest(method, path string, query url.Values, body []byte, contentType string, headers http.Header) (apiRequestPreview, error) {
+	target, values, err := requestTarget(path, query)
+	if err != nil {
+		return apiRequestPreview{}, err
+	}
+	validationTarget := target
+	if parsed, _ := url.Parse(target); !parsed.IsAbs() {
+		validationTarget = "https://canvas.invalid/" + strings.TrimLeft(target, "/")
+	}
+	if _, err := http.NewRequest(method, validationTarget, bytes.NewReader(body)); err != nil {
+		return apiRequestPreview{}, err
+	}
+	return apiRequestPreview{
+		DryRun: true, Method: method, Target: target, Query: values, ContentType: contentType,
+		Body: string(body), Headers: previewHeaders(headers, contentType),
+	}, nil
+}
+
+func requestTarget(path string, query url.Values) (string, url.Values, error) {
+	target, err := url.Parse(path)
+	if err != nil {
+		return "", nil, err
+	}
+	values := target.Query()
+	for key, entries := range query {
+		for _, entry := range entries {
+			values.Add(key, entry)
+		}
+	}
+	target.RawQuery = values.Encode()
+	return target.String(), values, nil
+}
+
+func previewHeaders(headers http.Header, contentType string) http.Header {
+	result := http.Header{"Accept": {"application/json"}}
+	for key, values := range headers {
+		for _, value := range values {
+			result.Add(key, value)
+		}
+	}
+	if contentType != "" {
+		result.Set("Content-Type", contentType)
+	}
+	for _, name := range []string{"Authorization", "Proxy-Authorization", "Cookie", "Set-Cookie"} {
+		if result.Values(name) != nil {
+			result[name] = []string{"[REDACTED]"}
+		}
+	}
+	return result
 }
 
 func emitOperations(operations []api.Operation) error {

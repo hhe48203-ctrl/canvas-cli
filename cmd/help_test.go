@@ -96,7 +96,7 @@ func TestAPIInvokeHelpCoversGenericRequestModes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, flag := range []string{"path", "query", "form", "body", "content-type", "header", "all-pages", "include-headers", "confirm"} {
+	for _, flag := range []string{"path", "query", "form", "body", "content-type", "header", "all-pages", "include-headers", "confirm", "dry-run"} {
 		if invoke.Flags().Lookup(flag) == nil {
 			t.Errorf("api invoke is missing --%s", flag)
 		}
