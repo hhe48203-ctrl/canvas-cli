@@ -47,6 +47,9 @@ canvas --update
 
 The update requires Go and write access to the installed binary.
 
+For troubleshooting or a bug report, run `canvas --version`. It reports the
+local build metadata without contacting Canvas.
+
 ## Configure
 
 Create a Canvas access token in **Account → Settings → Approved Integrations**,

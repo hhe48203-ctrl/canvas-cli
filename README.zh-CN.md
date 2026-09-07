@@ -44,6 +44,9 @@ canvas --update
 
 更新时需要 Go，并且当前用户必须有权写入已安装的二进制文件。
 
+排障或提交问题报告时，运行 `canvas --version`。它只报告本地构建信息，不会连接
+Canvas。
+
 ## 配置
 
 在 Canvas 的 **Account → Settings → Approved Integrations** 创建 Access

@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"testing"
 
@@ -119,6 +120,28 @@ func TestAssignmentSubmitHasDryRun(t *testing.T) {
 	}
 	if submit.Flags().Lookup("dry-run") == nil {
 		t.Fatal("assignments submit is missing --dry-run")
+	}
+}
+
+func TestRootVersionUsesUsageMetadataOffline(t *testing.T) {
+	resetCommandGlobals(t)
+	t.Setenv("CANVAS_BASE_URL", "")
+	t.Setenv("CANVAS_API_TOKEN", "")
+	root := newRootCommand()
+	root.SetArgs([]string{"--version"})
+	data, err := captureCommandOutput(t, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := debug.ReadBuildInfo()
+	if root.Version != usageVersion(info) || !strings.Contains(string(data), root.Version) {
+		t.Fatalf("version = %q, output = %q", root.Version, data)
+	}
+	for _, readme := range []string{"README.md", "README.zh-CN.md"} {
+		data, err := os.ReadFile(filepath.Join("..", readme))
+		if err != nil || !strings.Contains(string(data), "canvas --version") {
+			t.Fatalf("%s does not document --version: %v", readme, err)
+		}
 	}
 }
 

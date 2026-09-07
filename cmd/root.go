@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"strings"
 
 	"github.com/hhe48203-ctrl/canvas-cli/internal/canvas"
@@ -49,8 +50,10 @@ func Execute() {
 
 func newRootCommand() *cobra.Command {
 	var update bool
+	info, _ := debug.ReadBuildInfo()
 	root := &cobra.Command{
 		Use:           "canvas",
+		Version:       usageVersion(info),
 		Short:         "Canvas LMS command-line client for university courses",
 		Long:          "Work with university Canvas LMS courses from a terminal or AI agent using human-friendly commands, structured output, and a discoverable generic REST API invoker.",
 		SilenceErrors: true,
