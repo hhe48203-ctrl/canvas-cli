@@ -104,7 +104,7 @@ func TestAssignmentFilePreflightStopsBeforeFirstUpload(t *testing.T) {
 			root := newRootCommand()
 			root.SetArgs([]string{"assignments", "submit", "1", "2", "--file", valid, "--file", invalid, "--confirm"})
 			err := root.Execute()
-			if err == nil || !strings.Contains(err.Error(), invalid) {
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("%q", invalid)) {
 				t.Fatalf("error = %v; want failing file %q", err, invalid)
 			}
 			if requests != 0 {
