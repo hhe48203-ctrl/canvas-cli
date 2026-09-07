@@ -11,8 +11,14 @@ import (
 
 const updateModule = "github.com/hhe48203-ctrl/canvas-cli@main"
 
-func updateCLI(stdout, stderr io.Writer) error {
-	target, err := os.Executable()
+var (
+	updateExecutable = os.Executable
+	updateCommand    = exec.Command
+	updateReplace    = replaceExecutable
+)
+
+func updateCLI(stderr io.Writer) error {
+	target, err := updateExecutable()
 	if err != nil {
 		return fmt.Errorf("locate current executable: %w", err)
 	}
@@ -27,9 +33,9 @@ func updateCLI(stdout, stderr io.Writer) error {
 	defer os.RemoveAll(work)
 
 	fmt.Fprintln(stderr, "Updating canvas...")
-	build := exec.Command("go", "install", updateModule)
+	build := updateCommand("go", "install", updateModule)
 	build.Env = append(os.Environ(), "GOBIN="+work)
-	build.Stdout, build.Stderr = stdout, stderr
+	build.Stdout, build.Stderr = stderr, stderr
 	if err := build.Run(); err != nil {
 		return fmt.Errorf("build update: %w", err)
 	}
@@ -38,15 +44,15 @@ func updateCLI(stdout, stderr io.Writer) error {
 		binary += ".exe"
 	}
 	built := filepath.Join(work, binary)
-	check := exec.Command(built, "--help")
+	check := updateCommand(built, "--help")
 	check.Env = append(os.Environ(), "CANVAS_USAGE_LOG=0")
+	check.Stdout, check.Stderr = stderr, stderr
 	if err := check.Run(); err != nil {
 		return fmt.Errorf("verify update: %w", err)
 	}
-	if err := replaceExecutable(target, built); err != nil {
+	if err := updateReplace(target, built); err != nil {
 		return fmt.Errorf("install update: %w", err)
 	}
-	fmt.Fprintln(stderr, "Canvas updated successfully.")
 	return nil
 }
 

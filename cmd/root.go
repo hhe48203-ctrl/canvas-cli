@@ -58,7 +58,10 @@ func newRootCommand() *cobra.Command {
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if update {
-				return updateCLI(cmd.OutOrStdout(), cmd.ErrOrStderr())
+				if err := updateCLI(cmd.ErrOrStderr()); err != nil {
+					return err
+				}
+				return emit(map[string]any{"message": "Canvas updated successfully."})
 			}
 			return cmd.Help()
 		},
