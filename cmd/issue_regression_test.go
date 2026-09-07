@@ -111,7 +111,9 @@ func TestAPIInvokeDryRunPreviewsEncodedRequestWithoutHTTP(t *testing.T) {
 
 func TestAPIInvokeDryRunSupportsOperationIDsAndYAML(t *testing.T) {
 	resetCommandGlobals(t)
-	t.Setenv("HOME", t.TempDir())
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, "config"))
 	t.Setenv("CANVAS_BASE_URL", "")
 	t.Setenv("CANVAS_API_TOKEN", "")
 	root := newRootCommand()
