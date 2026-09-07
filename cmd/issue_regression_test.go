@@ -322,30 +322,47 @@ func TestAssignmentFileSubmissionPreservesFileOrder(t *testing.T) {
 	discardCommandOutput(t)
 
 	directory := t.TempDir()
-	first, second := filepath.Join(directory, "first.pdf"), filepath.Join(directory, "second.pdf")
-	for _, path := range []string{first, second} {
+	first, second, failed := filepath.Join(directory, "first.pdf"), filepath.Join(directory, "second.pdf"), filepath.Join(directory, "failed.pdf")
+	for _, path := range []string{first, second, failed} {
 		if err := os.WriteFile(path, []byte(path), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	var initialized, submitted []string
+	var initialized, initializationPaths, submitted []string
+	requests := 0
 	var server *httptest.Server
 	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
 		switch r.URL.Path {
 		case "/api/v1/courses/1/assignments/2/submissions/self/files":
+			if r.Method != http.MethodPost {
+				t.Errorf("upload initialization method = %s", r.Method)
+			}
 			if err := r.ParseForm(); err != nil {
 				t.Fatal(err)
 			}
 			name := r.Form.Get("name")
 			initialized = append(initialized, name)
+			initializationPaths = append(initializationPaths, r.URL.Path)
 			_, _ = fmt.Fprintf(w, `{"upload_url":%q,"upload_params":{}}`, server.URL+"/upload/"+name)
 		case "/upload/first.pdf":
 			_, _ = w.Write([]byte(`{"id":11}`))
 		case "/upload/second.pdf":
 			_, _ = w.Write([]byte(`{"id":22}`))
+		case "/upload/failed.pdf":
+			w.WriteHeader(http.StatusInternalServerError)
 		case "/api/v1/courses/1/assignments/2/submissions/self":
+			if r.Method != http.MethodPost {
+				t.Errorf("submission method = %s", r.Method)
+			}
 			if err := r.ParseForm(); err != nil {
 				t.Fatal(err)
+			}
+			if got := r.Form.Get("submission[submission_type]"); got != "online_upload" {
+				t.Errorf("submission type = %q", got)
+			}
+			if got := r.Form.Get("comment[text_comment]"); got != "Final answer" {
+				t.Errorf("comment = %q", got)
 			}
 			submitted = append([]string(nil), r.Form["submission[file_ids][]"]...)
 			_, _ = w.Write([]byte(`{}`))
@@ -358,15 +375,38 @@ func TestAssignmentFileSubmissionPreservesFileOrder(t *testing.T) {
 	t.Setenv("CANVAS_API_TOKEN", "token")
 
 	root := newRootCommand()
-	root.SetArgs([]string{"assignments", "submit", "1", "2", "--file", first, "--file", second, "--confirm"})
+	root.SetArgs([]string{"assignments", "submit", "1", "2", "--file", first, "--file", second, "--comment", "Final answer", "--confirm"})
 	if err := root.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	if got := strings.Join(initialized, ","); got != "first.pdf,second.pdf" {
 		t.Fatalf("upload initialization order = %q", got)
 	}
+	if got := strings.Join(initializationPaths, ","); got != "/api/v1/courses/1/assignments/2/submissions/self/files,/api/v1/courses/1/assignments/2/submissions/self/files" {
+		t.Fatalf("upload initialization paths = %q", got)
+	}
 	if got := strings.Join(submitted, ","); got != "11,22" {
 		t.Fatalf("submitted file IDs = %q", got)
+	}
+
+	requestsBefore := requests
+	root = newRootCommand()
+	root.SetArgs([]string{"assignments", "submit", "1", "2", "--file", first})
+	if err := root.Execute(); err == nil || !strings.Contains(err.Error(), "--confirm") {
+		t.Fatalf("missing confirmation error = %v", err)
+	}
+	if requests != requestsBefore {
+		t.Fatalf("requests without confirmation = %d; want %d", requests, requestsBefore)
+	}
+
+	submissionsBefore := len(submitted)
+	root = newRootCommand()
+	root.SetArgs([]string{"assignments", "submit", "1", "2", "--file", failed, "--confirm"})
+	if err := root.Execute(); err == nil {
+		t.Fatal("upload failure succeeded")
+	}
+	if len(submitted) != submissionsBefore {
+		t.Fatalf("final submissions after upload failure = %d; want %d", len(submitted), submissionsBefore)
 	}
 }
 
