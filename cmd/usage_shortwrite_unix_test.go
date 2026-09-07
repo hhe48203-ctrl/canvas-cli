@@ -35,6 +35,11 @@ func TestUsageShortWrite(t *testing.T) {
 		Execute()
 		os.Exit(0)
 	}
+	testBinary := filepath.Join(t.TempDir(), "usage-shortwrite.test")
+	build := exec.Command("go", "test", "-c", "-o", testBinary, ".")
+	if out, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build uninstrumented short-write subprocess: %s: %v", out, err)
+	}
 	for _, existing := range []bool{false, true} {
 		t.Run(strconv.FormatBool(existing), func(t *testing.T) {
 			dir := isolateUsage(t)
@@ -53,7 +58,7 @@ func TestUsageShortWrite(t *testing.T) {
 				wantCount++
 			}
 			// Force a real partial file write, not a simulated error return.
-			command := exec.Command(os.Args[0], "-test.run=^TestUsageShortWrite$")
+			command := exec.Command(testBinary, "-test.run=^TestUsageShortWrite$")
 			command.Env = append(os.Environ(), "CANVAS_USAGE_TEST_FILE_LIMIT="+strconv.Itoa(len(before)+100))
 			out, err := command.CombinedOutput()
 			wantOut, wantErr, wantExit := runUsage(t, false, args...)
