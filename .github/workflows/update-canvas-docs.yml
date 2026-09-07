@@ -1,0 +1,72 @@
+name: Update Canvas API catalog
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-canvas-api-catalog
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Download Canvas documentation
+        run: curl --fail --silent --show-error --location --retry 3 --output "$RUNNER_TEMP/all_resources.html" https://documentation.instructure.com/doc/api/all_resources.html
+
+      - name: Generate API catalog
+        run: |
+          go run ./tools/canvas-docs-gen -html "$RUNNER_TEMP/all_resources.html" -out "$RUNNER_TEMP/canvas-openapi.yml"
+          go run ./tools/openapi-gen -spec "$RUNNER_TEMP/canvas-openapi.yml" -out internal/api/generated.go
+          gofmt -w internal/api/generated.go
+
+      - name: Run tests
+        run: go test ./...
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet -- internal/api/generated.go; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Push update
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          BRANCH: codex/update-canvas-docs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$BRANCH"
+          git add internal/api/generated.go
+          git commit -m "Update Canvas API catalog"
+          git push --force origin "HEAD:refs/heads/$BRANCH"
+
+      - name: Create pull request
+        if: steps.changes.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: codex/update-canvas-docs
+        run: |
+          if [ -z "$(gh pr list --head "$BRANCH" --base main --state open --json number --jq '.[0].number')" ]; then
+            gh pr create --base main --head "$BRANCH" --title "Update Canvas API catalog" --body "Regenerates the API catalog from the latest official Canvas documentation. Created automatically by the weekly documentation workflow."
+          fi
