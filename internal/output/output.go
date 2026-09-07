@@ -18,10 +18,25 @@ type Envelope struct {
 	Message string `json:"message,omitempty" yaml:"message,omitempty"`
 }
 
+type ErrorDetails struct {
+	Kind       string
+	HTTPStatus int
+}
+
+type Error struct {
+	Message    string `json:"message" yaml:"message"`
+	Kind       string `json:"kind,omitempty" yaml:"kind,omitempty"`
+	HTTPStatus int    `json:"http_status,omitempty" yaml:"http_status,omitempty"`
+}
+
 func Success(data any) Envelope { return Envelope{OK: true, Data: data} }
 
-func Failure(err error) Envelope {
-	return Envelope{OK: false, Error: map[string]any{"message": err.Error()}}
+func Failure(err error, details ...ErrorDetails) Envelope {
+	failure := Error{Message: err.Error()}
+	if len(details) > 0 {
+		failure.Kind, failure.HTTPStatus = details[0].Kind, details[0].HTTPStatus
+	}
+	return Envelope{OK: false, Error: failure}
 }
 
 func Print(value any, format string) error {

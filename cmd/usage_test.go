@@ -19,6 +19,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // Exercise the real entry point, including os.Exit, without touching user logs.
@@ -229,6 +231,57 @@ func TestMalformedKeyValueFlagsUseStructuredErrorsWithoutRequests(t *testing.T) 
 	}
 	if requests != 0 {
 		t.Fatalf("requests = %d; want 0", requests)
+	}
+}
+
+func TestErrorEnvelopesExposeUsageClassification(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer server.Close()
+	t.Setenv("CANVAS_BASE_URL", server.URL)
+	t.Setenv("CANVAS_API_TOKEN", "token")
+	missing := filepath.Join(t.TempDir(), "missing.json")
+	tests := []struct {
+		name, kind string
+		args       []string
+		status     int
+	}{
+		{"confirmation", "confirmation_required", []string{"assignments", "submit", "1", "2", "--text", "answer"}, 0},
+		{"http", "http", []string{"api", "invoke", "GET", "/forbidden"}, http.StatusForbidden},
+		{"file", "io", []string{"api", "invoke", "GET", "/courses", "--body", missing}, 0},
+	}
+	for _, test := range tests {
+		for _, format := range []string{"json", "yaml"} {
+			t.Run(test.name+"/"+format, func(t *testing.T) {
+				out, stderr, exit := runUsage(t, false, append([]string{"--" + format}, test.args...)...)
+				if out != "" || exit != 1 {
+					t.Fatalf("output = %q, stderr = %q, exit = %d", out, stderr, exit)
+				}
+				var envelope struct {
+					OK    bool `json:"ok" yaml:"ok"`
+					Error struct {
+						Kind       string `json:"kind" yaml:"kind"`
+						HTTPStatus *int   `json:"http_status" yaml:"http_status"`
+					} `json:"error" yaml:"error"`
+				}
+				var err error
+				if format == "json" {
+					err = json.Unmarshal([]byte(stderr), &envelope)
+				} else {
+					err = yaml.Unmarshal([]byte(stderr), &envelope)
+				}
+				if err != nil || envelope.OK || envelope.Error.Kind != test.kind {
+					t.Fatalf("error envelope = %q, parsed = %#v, err = %v", stderr, envelope, err)
+				}
+				if test.status == 0 && envelope.Error.HTTPStatus != nil {
+					t.Fatalf("unexpected HTTP status %#v", envelope.Error.HTTPStatus)
+				}
+				if test.status != 0 && (envelope.Error.HTTPStatus == nil || *envelope.Error.HTTPStatus != test.status) {
+					t.Fatalf("HTTP status = %#v; want %d", envelope.Error.HTTPStatus, test.status)
+				}
+			})
+		}
 	}
 }
 

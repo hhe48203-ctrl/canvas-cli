@@ -35,11 +35,11 @@ var (
 )
 
 func Execute() {
-	if err := executeWithUsage(rootCmd); err != nil {
+	if err, details := executeWithUsage(rootCmd); err != nil {
 		mode := outputMode()
 		if mode == "table" {
 			fmt.Fprintln(os.Stderr, "canvas:", err)
-		} else if printErr := output.PrintTo(os.Stderr, output.Failure(err), mode); printErr != nil {
+		} else if printErr := output.PrintTo(os.Stderr, output.Failure(err, details), mode); printErr != nil {
 			fmt.Fprintln(os.Stderr, "canvas:", err)
 		}
 		os.Exit(1)

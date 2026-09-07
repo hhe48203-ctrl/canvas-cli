@@ -19,6 +19,7 @@ import (
 
 	"github.com/hhe48203-ctrl/canvas-cli/internal/api"
 	"github.com/hhe48203-ctrl/canvas-cli/internal/canvas"
+	"github.com/hhe48203-ctrl/canvas-cli/internal/output"
 	"github.com/spf13/cobra"
 )
 
@@ -43,10 +44,8 @@ type usageEvent struct {
 	phase       string
 }
 
-func executeWithUsage(root *cobra.Command) error {
-	if os.Getenv("CANVAS_USAGE_LOG") == "0" {
-		return root.Execute()
-	}
+func executeWithUsage(root *cobra.Command) (error, output.ErrorDetails) {
+	logUsage := os.Getenv("CANVAS_USAGE_LOG") != "0"
 	start := time.Now()
 	event := &usageEvent{Kind: "command", phase: "arguments"}
 	activeUsage = event
@@ -115,11 +114,14 @@ func executeWithUsage(root *cobra.Command) error {
 	}
 	info, _ := debug.ReadBuildInfo()
 	event.Version = usageVersion(info)
-	if cache, cacheErr := os.UserCacheDir(); cacheErr == nil {
-		// Usage logging must not change command output or success/failure.
-		_ = appendUsage(filepath.Join(cache, "canvas-cli", "logs"), *event)
+	if logUsage {
+		cache, cacheErr := os.UserCacheDir()
+		if cacheErr == nil {
+			// Usage logging must not change command output or success/failure.
+			_ = appendUsage(filepath.Join(cache, "canvas-cli", "logs"), *event)
+		}
 	}
-	return err
+	return err, output.ErrorDetails{Kind: event.ErrorKind, HTTPStatus: event.HTTPStatus}
 }
 
 type usageTransport struct {
