@@ -48,3 +48,21 @@ func TestResolveReturnsNormalizedBaseURL(t *testing.T) {
 		t.Fatalf("config = %#v", config)
 	}
 }
+
+func TestResolveBaseURLPrecedence(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("CANVAS_BASE_URL", "https://environment.test/canvas")
+	if err := SaveBaseURL("https://saved.test/canvas"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := ResolveBaseURL("https://flag.test/canvas"); err != nil || got != "https://flag.test/canvas" {
+		t.Fatalf("flag URL = %q, %v", got, err)
+	}
+	if got, err := ResolveBaseURL(""); err != nil || got != "https://environment.test/canvas" {
+		t.Fatalf("environment URL = %q, %v", got, err)
+	}
+	t.Setenv("CANVAS_BASE_URL", "")
+	if got, err := ResolveBaseURL(""); err != nil || got != "https://saved.test/canvas" {
+		t.Fatalf("saved URL = %q, %v", got, err)
+	}
+}

@@ -44,13 +44,19 @@ func TestKeyValueFlagsPreserveValuesAndOrder(t *testing.T) {
 func TestAPIInvokeDryRunPreviewsEncodedRequestWithoutHTTP(t *testing.T) {
 	resetCommandGlobals(t)
 	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
+	executedTarget := ""
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		executedTarget = server.URL + r.URL.RequestURI()
+		_, _ = w.Write([]byte(`{}`))
+	}))
 	defer server.Close()
-	t.Setenv("CANVAS_BASE_URL", server.URL)
-	t.Setenv("CANVAS_API_TOKEN", "never-display-this-token")
+	t.Setenv("CANVAS_BASE_URL", "https://environment.example.test/canvas")
+	t.Setenv("CANVAS_API_TOKEN", "")
 
 	root := newRootCommand()
-	root.SetArgs([]string{"--json", "api", "invoke", "POST", "/api/v1/courses/{course_id}/items?existing=one",
+	root.SetArgs([]string{"--base-url", server.URL + "/canvas", "--json", "api", "invoke", "POST", "/api/v1/courses/{course_id}/items?existing=one",
 		"--path", "course_id=room/7", "--query", "include[]=one", "--query", "include[]=two",
 		"--form", "tags[]=alpha", "--form", "tags[]=beta", "--header", "Authorization=override",
 		"--header", "Cookie=session=private", "--header", "X-Request-ID=request-5", "--dry-run"})
@@ -61,13 +67,14 @@ func TestAPIInvokeDryRunPreviewsEncodedRequestWithoutHTTP(t *testing.T) {
 	var envelope struct {
 		OK   bool `json:"ok"`
 		Data struct {
-			DryRun      bool                `json:"dry_run"`
-			Method      string              `json:"method"`
-			Target      string              `json:"target"`
-			Query       map[string][]string `json:"query"`
-			ContentType string              `json:"content_type"`
-			Body        string              `json:"body"`
-			Headers     map[string][]string `json:"headers"`
+			DryRun         bool                `json:"dry_run"`
+			Method         string              `json:"method"`
+			Target         string              `json:"target"`
+			TargetResolved bool                `json:"target_resolved"`
+			Query          map[string][]string `json:"query"`
+			ContentType    string              `json:"content_type"`
+			Body           string              `json:"body"`
+			Headers        map[string][]string `json:"headers"`
 		} `json:"data"`
 	}
 	if err := json.Unmarshal(data, &envelope); err != nil {
@@ -75,7 +82,7 @@ func TestAPIInvokeDryRunPreviewsEncodedRequestWithoutHTTP(t *testing.T) {
 	}
 	preview := envelope.Data
 	if !envelope.OK || !preview.DryRun || preview.Method != "POST" ||
-		preview.Target != "/api/v1/courses/room%2F7/items?existing=one&include%5B%5D=one&include%5B%5D=two" ||
+		preview.Target != server.URL+"/canvas/api/v1/courses/room%2F7/items?existing=one&include%5B%5D=one&include%5B%5D=two" || !preview.TargetResolved ||
 		preview.ContentType != "application/x-www-form-urlencoded" || preview.Body != "tags%5B%5D=alpha&tags%5B%5D=beta" {
 		t.Fatalf("preview = %#v", preview)
 	}
@@ -86,13 +93,25 @@ func TestAPIInvokeDryRunPreviewsEncodedRequestWithoutHTTP(t *testing.T) {
 		preview.Headers["X-Request-Id"][0] != "request-5" || preview.Headers["Content-Type"][0] != "application/x-www-form-urlencoded" {
 		t.Fatalf("headers = %#v", preview.Headers)
 	}
-	if requests != 0 || strings.Contains(string(data), "never-display-this-token") {
+	if requests != 0 {
 		t.Fatalf("requests = %d, output = %s", requests, data)
+	}
+	t.Setenv("CANVAS_API_TOKEN", "token")
+	root = newRootCommand()
+	root.SetArgs([]string{"--base-url", server.URL + "/canvas", "api", "invoke", "POST", "/api/v1/courses/{course_id}/items?existing=one",
+		"--path", "course_id=room/7", "--query", "include[]=one", "--query", "include[]=two",
+		"--form", "tags[]=alpha", "--form", "tags[]=beta", "--confirm"})
+	if _, err := captureCommandOutput(t, root); err != nil {
+		t.Fatal(err)
+	}
+	if requests != 1 || executedTarget != preview.Target {
+		t.Fatalf("execution target = %q after %d requests; preview = %q", executedTarget, requests, preview.Target)
 	}
 }
 
 func TestAPIInvokeDryRunSupportsOperationIDsAndYAML(t *testing.T) {
 	resetCommandGlobals(t)
+	t.Setenv("HOME", t.TempDir())
 	t.Setenv("CANVAS_BASE_URL", "")
 	t.Setenv("CANVAS_API_TOKEN", "")
 	root := newRootCommand()
@@ -101,8 +120,32 @@ func TestAPIInvokeDryRunSupportsOperationIDsAndYAML(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(data), "dry_run: true") || !strings.Contains(string(data), "target: /api/v1/courses/123") {
+	if !strings.Contains(string(data), "dry_run: true") || !strings.Contains(string(data), "target: /api/v1/courses/123") || !strings.Contains(string(data), "target_resolved: false") {
 		t.Fatalf("YAML preview = %s", data)
+	}
+}
+
+func TestAPIInvokeDryRunKeepsAbsoluteTarget(t *testing.T) {
+	resetCommandGlobals(t)
+	t.Setenv("CANVAS_BASE_URL", "https://canvas.example.test/canvas")
+	t.Setenv("CANVAS_API_TOKEN", "")
+	root := newRootCommand()
+	root.SetArgs([]string{"--json", "api", "invoke", "GET", "https://other.example.test/api/v1/courses?existing=one", "--query", "include[]=term", "--dry-run"})
+	data, err := captureCommandOutput(t, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var envelope struct {
+		Data struct {
+			Target         string `json:"target"`
+			TargetResolved bool   `json:"target_resolved"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(data, &envelope); err != nil {
+		t.Fatal(err)
+	}
+	if envelope.Data.Target != "https://other.example.test/api/v1/courses?existing=one&include%5B%5D=term" || !envelope.Data.TargetResolved {
+		t.Fatalf("preview = %#v", envelope.Data)
 	}
 }
 
@@ -111,7 +154,7 @@ func TestAPIInvokeDryRunValidatesParametersWithoutHTTP(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
 	defer server.Close()
-	t.Setenv("CANVAS_BASE_URL", server.URL)
+	t.Setenv("CANVAS_BASE_URL", server.URL+"/canvas")
 	t.Setenv("CANVAS_API_TOKEN", "token")
 
 	for _, test := range []struct {
@@ -145,7 +188,7 @@ func TestAssignmentDryRunPreviewsSubmissionModesWithoutHTTP(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { requests++ }))
 	defer server.Close()
-	t.Setenv("CANVAS_BASE_URL", server.URL)
+	t.Setenv("CANVAS_BASE_URL", server.URL+"/canvas")
 	t.Setenv("CANVAS_API_TOKEN", "token")
 
 	tests := []struct {
@@ -171,6 +214,7 @@ func TestAssignmentDryRunPreviewsSubmissionModesWithoutHTTP(t *testing.T) {
 					CourseID       string `json:"course_id"`
 					AssignmentID   string `json:"assignment_id"`
 					Target         string `json:"target"`
+					TargetResolved bool   `json:"target_resolved"`
 					SubmissionType string `json:"submission_type"`
 					Text           string `json:"text"`
 					URL            string `json:"url"`
@@ -188,7 +232,7 @@ func TestAssignmentDryRunPreviewsSubmissionModesWithoutHTTP(t *testing.T) {
 			}
 			preview := envelope.Data
 			if !envelope.OK || !preview.DryRun || preview.CourseID != "course/1" || preview.AssignmentID != "assignment/2" ||
-				preview.Target != "/api/v1/courses/course%2F1/assignments/assignment%2F2/submissions/self" ||
+				preview.Target != server.URL+"/canvas/api/v1/courses/course%2F1/assignments/assignment%2F2/submissions/self" || !preview.TargetResolved ||
 				preview.SubmissionType != test.submissionType || preview.Text != test.text || preview.URL != test.url {
 				t.Fatalf("preview = %#v", preview)
 			}

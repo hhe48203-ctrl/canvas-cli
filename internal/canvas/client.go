@@ -52,10 +52,16 @@ func (c *Client) SameOrigin(path string) bool {
 	return err == nil && (!target.IsAbs() || sameOrigin(target, parsedURL(c.BaseURL)))
 }
 
-func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string, headers http.Header) (Response, error) {
+// Target returns the URL used for a relative or absolute request path.
+func (c *Client) Target(path string) string {
 	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		path = c.BaseURL + "/" + strings.TrimLeft(path, "/")
+		return c.BaseURL + "/" + strings.TrimLeft(path, "/")
 	}
+	return path
+}
+
+func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string, headers http.Header) (Response, error) {
+	path = c.Target(path)
 	newRequest := func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, method, path, body)
 		if err != nil {
@@ -180,9 +186,7 @@ func (c *Client) Form(ctx context.Context, method, path string, values url.Value
 }
 
 func (c *Client) Download(ctx context.Context, path, destination string) (int64, error) {
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		path = c.BaseURL + "/" + strings.TrimLeft(path, "/")
-	}
+	path = c.Target(path)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return 0, err

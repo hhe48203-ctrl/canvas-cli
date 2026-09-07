@@ -11,17 +11,20 @@ import (
 	"text/tabwriter"
 
 	"github.com/hhe48203-ctrl/canvas-cli/internal/api"
+	"github.com/hhe48203-ctrl/canvas-cli/internal/canvas"
+	"github.com/hhe48203-ctrl/canvas-cli/internal/config"
 	"github.com/spf13/cobra"
 )
 
 type apiRequestPreview struct {
-	DryRun      bool        `json:"dry_run" yaml:"dry_run"`
-	Method      string      `json:"method" yaml:"method"`
-	Target      string      `json:"target" yaml:"target"`
-	Query       url.Values  `json:"query" yaml:"query"`
-	ContentType string      `json:"content_type" yaml:"content_type"`
-	Body        string      `json:"body" yaml:"body"`
-	Headers     http.Header `json:"headers" yaml:"headers"`
+	DryRun         bool        `json:"dry_run" yaml:"dry_run"`
+	Method         string      `json:"method" yaml:"method"`
+	Target         string      `json:"target" yaml:"target"`
+	TargetResolved bool        `json:"target_resolved" yaml:"target_resolved"`
+	Query          url.Values  `json:"query" yaml:"query"`
+	ContentType    string      `json:"content_type" yaml:"content_type"`
+	Body           string      `json:"body" yaml:"body"`
+	Headers        http.Header `json:"headers" yaml:"headers"`
 }
 
 func newAPICommand() *cobra.Command {
@@ -249,17 +252,39 @@ func previewAPIRequest(method, path string, query url.Values, body []byte, conte
 	if err != nil {
 		return apiRequestPreview{}, err
 	}
+	target, resolved, err := previewTarget(target)
+	if err != nil {
+		return apiRequestPreview{}, err
+	}
 	validationTarget := target
-	if parsed, _ := url.Parse(target); !parsed.IsAbs() {
+	if !resolved {
 		validationTarget = "https://canvas.invalid/" + strings.TrimLeft(target, "/")
 	}
 	if _, err := http.NewRequest(method, validationTarget, bytes.NewReader(body)); err != nil {
 		return apiRequestPreview{}, err
 	}
 	return apiRequestPreview{
-		DryRun: true, Method: method, Target: target, Query: values, ContentType: contentType,
+		DryRun: true, Method: method, Target: target, TargetResolved: resolved, Query: values, ContentType: contentType,
 		Body: string(body), Headers: previewHeaders(headers, contentType),
 	}, nil
+}
+
+func previewTarget(target string) (string, bool, error) {
+	parsed, err := url.Parse(target)
+	if err != nil {
+		return "", false, err
+	}
+	if parsed.IsAbs() {
+		return target, true, nil
+	}
+	base, err := config.ResolveBaseURL(baseURL)
+	if err != nil {
+		return "", false, err
+	}
+	if base == "" {
+		return target, false, nil
+	}
+	return canvas.NewClient(base, "").Target(target), true, nil
 }
 
 func requestTarget(path string, query url.Values) (string, url.Values, error) {

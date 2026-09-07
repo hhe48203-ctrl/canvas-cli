@@ -20,6 +20,23 @@ type Config struct {
 }
 
 func Resolve(baseURL string) (Config, error) {
+	normalizedBaseURL, err := ResolveBaseURL(baseURL)
+	if err != nil {
+		return Config{}, err
+	}
+	if normalizedBaseURL == "" {
+		return Config{}, errors.New("Canvas URL is required; set CANVAS_BASE_URL or use --base-url")
+	}
+
+	token := strings.TrimSpace(os.Getenv("CANVAS_API_TOKEN"))
+	if token == "" {
+		return Config{}, errors.New("Canvas access token is required; set CANVAS_API_TOKEN")
+	}
+	return Config{BaseURL: normalizedBaseURL, Token: token}, nil
+}
+
+// ResolveBaseURL applies the normal instance URL precedence without loading a token.
+func ResolveBaseURL(baseURL string) (string, error) {
 	file := File{}
 	if dir, err := os.UserConfigDir(); err == nil {
 		path := filepath.Join(dir, "canvas-cli", "config.json")
@@ -34,16 +51,10 @@ func Resolve(baseURL string) (Config, error) {
 	if baseURL == "" {
 		baseURL = file.BaseURL
 	}
-	normalizedBaseURL, err := normalizeBaseURL(baseURL)
-	if err != nil {
-		return Config{}, err
+	if strings.TrimSpace(baseURL) == "" {
+		return "", nil
 	}
-
-	token := strings.TrimSpace(os.Getenv("CANVAS_API_TOKEN"))
-	if token == "" {
-		return Config{}, errors.New("Canvas access token is required; set CANVAS_API_TOKEN")
-	}
-	return Config{BaseURL: normalizedBaseURL, Token: token}, nil
+	return normalizeBaseURL(baseURL)
 }
 
 func SaveBaseURL(baseURL string) error {

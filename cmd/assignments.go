@@ -23,6 +23,7 @@ type assignmentSubmissionPreview struct {
 	CourseID       string                  `json:"course_id" yaml:"course_id"`
 	AssignmentID   string                  `json:"assignment_id" yaml:"assignment_id"`
 	Target         string                  `json:"target" yaml:"target"`
+	TargetResolved bool                    `json:"target_resolved" yaml:"target_resolved"`
 	SubmissionType string                  `json:"submission_type" yaml:"submission_type"`
 	Files          []assignmentPreviewFile `json:"files,omitempty" yaml:"files,omitempty"`
 	Text           string                  `json:"text,omitempty" yaml:"text,omitempty"`
@@ -150,7 +151,11 @@ func preflightAssignmentFiles(filePaths []string) ([]os.FileInfo, error) {
 }
 
 func previewAssignmentSubmission(args []string) (assignmentSubmissionPreview, error) {
-	preview := assignmentSubmissionPreview{DryRun: true, CourseID: args[0], AssignmentID: args[1], Target: assignmentSubmissionPath(args[0], args[1]), Comment: comment}
+	target, resolved, err := previewTarget(assignmentSubmissionPath(args[0], args[1]))
+	if err != nil {
+		return assignmentSubmissionPreview{}, err
+	}
+	preview := assignmentSubmissionPreview{DryRun: true, CourseID: args[0], AssignmentID: args[1], Target: target, TargetResolved: resolved, Comment: comment}
 	if len(assignmentFiles) > 0 {
 		infos, err := preflightAssignmentFiles(assignmentFiles)
 		if err != nil {
