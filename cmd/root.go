@@ -107,7 +107,7 @@ func newRootCommand() *cobra.Command {
 	root.PersistentFlags().StringVar(&format, "output", "", "Output format: auto, table, json, yaml")
 	root.PersistentFlags().BoolVar(&jsonOutput, "json", false, "Output JSON")
 	root.PersistentFlags().BoolVar(&yamlOutput, "yaml", false, "Output YAML")
-	root.AddCommand(newAuthCommand(), newAPICommand(), newCoursesCommand(), newModulesCommand(), newAssignmentsCommand(), newFilesCommand(), newQuizzesCommand(), newMeCommand())
+	root.AddCommand(newAuthCommand(), newAPICommand(), newCoursesCommand(), newModulesCommand(), newPagesCommand(), newAssignmentsCommand(), newFilesCommand(), newQuizzesCommand(), newMeCommand())
 	return root
 }
 
