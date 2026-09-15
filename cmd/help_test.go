@@ -63,6 +63,7 @@ func TestEveryHighLevelListExposesQueryAndPaginationFlags(t *testing.T) {
 	commands := [][]string{
 		{"courses", "list"},
 		{"modules", "list"},
+		{"modules", "items", "list"},
 		{"assignments", "list"},
 		{"files", "list"},
 		{"quizzes", "list"},
