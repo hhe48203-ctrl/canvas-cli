@@ -350,6 +350,25 @@ func TestDownloadAtomicallyReplacesDestination(t *testing.T) {
 	}
 }
 
+func TestDownloadNormalizesUppercaseHTTPScheme(t *testing.T) {
+	destination := filepath.Join(t.TempDir(), "lecture.pdf")
+	client := NewClient("http://canvas.test/canvas", "secret")
+	client.HTTPClient.Transport = roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		if request.URL.String() != "http://files.test/lecture.pdf" || request.Header.Get("Authorization") != "" {
+			t.Fatalf("request = %s, authorization = %q", request.URL, request.Header.Get("Authorization"))
+		}
+		response := testResponse(request, http.StatusOK, nil)
+		response.Body = io.NopCloser(strings.NewReader("complete"))
+		return response, nil
+	})
+	if _, err := client.Download(context.Background(), "HTTP://files.test/lecture.pdf", destination); err != nil {
+		t.Fatal(err)
+	}
+	if data, err := os.ReadFile(destination); err != nil || string(data) != "complete" {
+		t.Fatalf("destination = %q, err = %v", data, err)
+	}
+}
+
 func TestUploadCompletesMultipartFlow(t *testing.T) {
 	tmp := t.TempDir()
 	filePath := filepath.Join(tmp, "notes.txt")

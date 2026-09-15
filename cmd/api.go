@@ -278,21 +278,11 @@ func previewAPIRequest(method, path string, query url.Values, body []byte, conte
 }
 
 func previewTarget(target string) (string, bool, error) {
-	parsed, err := url.Parse(target)
-	if err != nil {
-		return "", false, err
-	}
-	if parsed.IsAbs() {
-		return target, true, nil
-	}
 	base, err := config.ResolveBaseURL(baseURL)
 	if err != nil {
 		return "", false, err
 	}
-	if base == "" {
-		return target, false, nil
-	}
-	return canvas.NewClient(base, "").Target(target), true, nil
+	return canvas.ResolveTarget(base, target)
 }
 
 func requestTarget(path string, query url.Values) (string, url.Values, error) {

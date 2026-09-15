@@ -53,15 +53,38 @@ func (c *Client) SameOrigin(path string) bool {
 }
 
 // Target returns the URL used for a relative or absolute request path.
-func (c *Client) Target(path string) string {
-	if !strings.HasPrefix(path, "http://") && !strings.HasPrefix(path, "https://") {
-		return c.BaseURL + "/" + strings.TrimLeft(path, "/")
+func (c *Client) Target(path string) (string, error) {
+	target, _, err := ResolveTarget(c.BaseURL, path)
+	return target, err
+}
+
+// ResolveTarget resolves an HTTP(S) target or a relative Canvas API path.
+func ResolveTarget(baseURL, path string) (string, bool, error) {
+	target, err := url.Parse(path)
+	if err != nil {
+		return "", false, err
 	}
-	return path
+	if target.IsAbs() {
+		if target.Scheme != "http" && target.Scheme != "https" {
+			return "", false, fmt.Errorf("unsupported URL scheme %q; expected http or https", target.Scheme)
+		}
+		if target.Host == "" {
+			return "", false, fmt.Errorf("absolute URL %q must include a host", path)
+		}
+		return target.String(), true, nil
+	}
+	if baseURL == "" {
+		return path, false, nil
+	}
+	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(path, "/"), true, nil
 }
 
 func (c *Client) RequestWithHeaders(ctx context.Context, method, path string, query url.Values, body io.Reader, contentType string, headers http.Header) (Response, error) {
-	path = c.Target(path)
+	var err error
+	path, err = c.Target(path)
+	if err != nil {
+		return Response{}, err
+	}
 	newRequest := func() (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, method, path, body)
 		if err != nil {
@@ -186,7 +209,11 @@ func (c *Client) Form(ctx context.Context, method, path string, values url.Value
 }
 
 func (c *Client) Download(ctx context.Context, path, destination string) (int64, error) {
-	path = c.Target(path)
+	var err error
+	path, err = c.Target(path)
+	if err != nil {
+		return 0, err
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, path, nil)
 	if err != nil {
 		return 0, err

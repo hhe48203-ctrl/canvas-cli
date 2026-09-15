@@ -193,6 +193,68 @@ func TestAPIInvokeDryRunKeepsAbsoluteTarget(t *testing.T) {
 	}
 }
 
+func TestAPIInvokeUsesTheSameAbsoluteTargetForPreviewAndExecution(t *testing.T) {
+	resetCommandGlobals(t)
+	baseRequests, targetRequests := 0, 0
+	base := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		baseRequests++
+		if r.URL.Path != "/canvas/api/v1/relative" || r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("base request = %s %s, authorization = %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer base.Close()
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		targetRequests++
+		if r.URL.RequestURI() != "/api/v1/courses?include%5B%5D=one" || r.Header.Get("Authorization") != "" {
+			t.Errorf("target request = %s, authorization = %q", r.URL.RequestURI(), r.Header.Get("Authorization"))
+		}
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	defer target.Close()
+	t.Setenv("CANVAS_API_TOKEN", "token")
+
+	for _, scheme := range []string{"http", "HTTP"} {
+		absolute := scheme + strings.TrimPrefix(target.URL, "http") + "/api/v1/courses"
+		root := newRootCommand()
+		root.SetArgs([]string{"--base-url", base.URL + "/canvas", "--json", "api", "invoke", "GET", absolute, "--query", "include[]=one", "--dry-run"})
+		data, err := captureCommandOutput(t, root)
+		if err != nil || !strings.Contains(string(data), `"target":"`+target.URL+`/api/v1/courses?include%5B%5D=one"`) {
+			t.Fatalf("preview %q: output = %s, error = %v", scheme, data, err)
+		}
+
+		root = newRootCommand()
+		root.SetArgs([]string{"--base-url", base.URL + "/canvas", "api", "invoke", "GET", absolute, "--query", "include[]=one"})
+		if _, err := captureCommandOutput(t, root); err != nil {
+			t.Fatalf("execution %q: %v", scheme, err)
+		}
+	}
+
+	root := newRootCommand()
+	root.SetArgs([]string{"--base-url", base.URL + "/canvas", "--json", "api", "invoke", "GET", "/api/v1/relative", "--dry-run"})
+	data, err := captureCommandOutput(t, root)
+	if err != nil || !strings.Contains(string(data), `"target":"`+base.URL+`/canvas/api/v1/relative"`) {
+		t.Fatalf("relative preview: output = %s, error = %v", data, err)
+	}
+	root = newRootCommand()
+	root.SetArgs([]string{"--base-url", base.URL + "/canvas", "api", "invoke", "GET", "/api/v1/relative"})
+	if _, err := captureCommandOutput(t, root); err != nil {
+		t.Fatalf("relative execution: %v", err)
+	}
+
+	for _, dryRunArg := range [][]string{{"--dry-run"}, nil} {
+		root = newRootCommand()
+		args := append([]string{"--base-url", base.URL + "/canvas", "api", "invoke", "GET", "ftp://example.test/courses"}, dryRunArg...)
+		root.SetArgs(args)
+		if _, err := captureCommandOutput(t, root); err == nil || !strings.Contains(err.Error(), `unsupported URL scheme "ftp"`) {
+			t.Fatalf("unsupported scheme error = %v", err)
+		}
+	}
+	if baseRequests != 1 || targetRequests != 2 {
+		t.Fatalf("base requests = %d, target requests = %d", baseRequests, targetRequests)
+	}
+}
+
 func TestAPIInvokeDryRunValidatesParametersWithoutHTTP(t *testing.T) {
 	resetCommandGlobals(t)
 	requests := 0
