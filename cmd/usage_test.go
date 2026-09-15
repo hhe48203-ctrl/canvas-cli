@@ -28,6 +28,21 @@ func TestUsageProcess(t *testing.T) {
 	if os.Getenv("CANVAS_USAGE_TEST_HELPER") != "1" {
 		return
 	}
+	if target := os.Getenv("CANVAS_UPDATE_FAILURE_TEST_TARGET"); target != "" {
+		t.Setenv("CANVAS_UPDATE_TEST_HELPER", "1")
+		updateExecutable = func() (string, error) { return target, nil }
+		phase := os.Getenv("CANVAS_UPDATE_FAILURE_TEST_PHASE")
+		updateCommand = func(name string, _ ...string) *exec.Cmd {
+			action := "fail"
+			if phase == "verify" && name == "go" {
+				action = "build"
+			} else if phase == "verify" {
+				action = "verify-fail"
+			}
+			return exec.Command(os.Args[0], "-test.run=^TestUpdateProcess$", "--", action)
+		}
+		updateReplace = func(string, string) error { return errors.New("update replacement should not run") }
+	}
 	i := slices.Index(os.Args, "--")
 	rootCmd = newRootCommand()
 	rootCmd.SetArgs(os.Args[i+1:])

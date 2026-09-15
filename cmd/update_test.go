@@ -45,6 +45,9 @@ func TestUpdateProcess(t *testing.T) {
 	case "fail":
 		fmt.Fprintln(os.Stdout, "build failure")
 		os.Exit(1)
+	case "verify-fail":
+		fmt.Fprintln(os.Stdout, "verify failure")
+		os.Exit(1)
 	}
 	os.Exit(0)
 }
@@ -128,6 +131,58 @@ func TestUpdateFailureReturnsError(t *testing.T) {
 	root.SetArgs([]string{"--json", "--update"})
 	if _, err := captureCommandOutput(t, root); err == nil || !strings.Contains(err.Error(), "build update") {
 		t.Fatalf("update error = %v", err)
+	}
+}
+
+func TestUpdateFailureWritesOneStructuredErrorEnvelope(t *testing.T) {
+	for _, failure := range []struct{ phase, action, diagnostic string }{
+		{"build", "build update", "build failure"},
+		{"verify", "verify update", "verify failure"},
+	} {
+		t.Run(failure.phase, func(t *testing.T) {
+			target := filepath.Join(t.TempDir(), "canvas")
+			if err := os.WriteFile(target, []byte("original"), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			t.Setenv("CANVAS_UPDATE_FAILURE_TEST_TARGET", target)
+			t.Setenv("CANVAS_UPDATE_FAILURE_TEST_PHASE", failure.phase)
+
+			for _, format := range []string{"json", "yaml"} {
+				t.Run(format, func(t *testing.T) {
+					stdout, stderr, exit := runUsage(t, false, "--"+format, "--update")
+					if exit != 1 || stdout != "" {
+						t.Fatalf("stdout = %q, stderr = %q, exit = %d", stdout, stderr, exit)
+					}
+					var envelope struct {
+						OK    bool `json:"ok" yaml:"ok"`
+						Error struct {
+							Message string `json:"message" yaml:"message"`
+						} `json:"error" yaml:"error"`
+					}
+					if format == "json" {
+						if err := json.Unmarshal([]byte(stderr), &envelope); err != nil {
+							t.Fatalf("JSON error envelope = %q, err = %v", stderr, err)
+						}
+					} else {
+						decoder := yaml.NewDecoder(strings.NewReader(stderr))
+						if err := decoder.Decode(&envelope); err != nil {
+							t.Fatalf("YAML error envelope = %q, err = %v", stderr, err)
+						}
+						var extra any
+						if err := decoder.Decode(&extra); err != io.EOF {
+							t.Fatalf("YAML error output has extra document: %q, err = %v", stderr, err)
+						}
+					}
+					if envelope.OK || !strings.Contains(envelope.Error.Message, failure.action) ||
+						!strings.Contains(envelope.Error.Message, "Updating canvas...") || !strings.Contains(envelope.Error.Message, failure.diagnostic) {
+						t.Fatalf("error envelope = %#v", envelope)
+					}
+				})
+			}
+			if data, err := os.ReadFile(target); err != nil || string(data) != "original" {
+				t.Fatalf("target = %q, err = %v", data, err)
+			}
+		})
 	}
 }
 

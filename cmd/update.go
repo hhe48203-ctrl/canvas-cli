@@ -1,12 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 )
 
 const updateModule = "github.com/hhe48203-ctrl/canvas-cli@main"
@@ -18,6 +20,7 @@ var (
 )
 
 func updateCLI(stderr io.Writer) error {
+	var diagnostics bytes.Buffer
 	target, err := updateExecutable()
 	if err != nil {
 		return fmt.Errorf("locate current executable: %w", err)
@@ -32,12 +35,12 @@ func updateCLI(stderr io.Writer) error {
 	}
 	defer os.RemoveAll(work)
 
-	fmt.Fprintln(stderr, "Updating canvas...")
+	fmt.Fprintln(&diagnostics, "Updating canvas...")
 	build := updateCommand("go", "install", updateModule)
 	build.Env = append(os.Environ(), "GOBIN="+work)
-	build.Stdout, build.Stderr = stderr, stderr
+	build.Stdout, build.Stderr = &diagnostics, &diagnostics
 	if err := build.Run(); err != nil {
-		return fmt.Errorf("build update: %w", err)
+		return updateFailure("build update", err, &diagnostics)
 	}
 	binary := "canvas-cli"
 	if runtime.GOOS == "windows" {
@@ -46,14 +49,22 @@ func updateCLI(stderr io.Writer) error {
 	built := filepath.Join(work, binary)
 	check := updateCommand(built, "--help")
 	check.Env = append(os.Environ(), "CANVAS_USAGE_LOG=0")
-	check.Stdout, check.Stderr = stderr, stderr
+	check.Stdout, check.Stderr = &diagnostics, &diagnostics
 	if err := check.Run(); err != nil {
-		return fmt.Errorf("verify update: %w", err)
+		return updateFailure("verify update", err, &diagnostics)
 	}
 	if err := updateReplace(target, built); err != nil {
-		return fmt.Errorf("install update: %w", err)
+		return updateFailure("install update", err, &diagnostics)
 	}
+	_, _ = io.Copy(stderr, &diagnostics)
 	return nil
+}
+
+func updateFailure(action string, err error, diagnostics *bytes.Buffer) error {
+	if text := strings.TrimSpace(diagnostics.String()); text != "" {
+		return fmt.Errorf("%s: %w: %s", action, err, text)
+	}
+	return fmt.Errorf("%s: %w", action, err)
 }
 
 func replaceExecutable(target, built string) error {
