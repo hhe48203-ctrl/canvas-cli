@@ -157,6 +157,14 @@ responses are paginated, so use --all-pages to follow opaque Link headers. Use
 				}
 				method, path = op.Method, op.Path
 				selected = &op
+				if op.ID == "courses.show" {
+					if id, ok := pathValues["id"]; ok {
+						if courseID, ok := pathValues["course_id"]; ok && id != courseID {
+							return fmt.Errorf("conflicting --path id and --path course_id values")
+						}
+						pathValues["course_id"] = id
+					}
+				}
 				provided := pathValues
 				for _, parameter := range op.ParametersIn("path") {
 					if _, ok := provided[parameter.Name]; !ok {

@@ -129,6 +129,46 @@ func TestAPIInvokeDryRunSupportsOperationIDsAndYAML(t *testing.T) {
 	}
 }
 
+func TestAPIInvokeCoursesShowAcceptsLegacyPathParameter(t *testing.T) {
+	resetCommandGlobals(t)
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != "/canvas/api/v1/courses/course%2F1" {
+			t.Errorf("request = %s %s", r.Method, r.URL.EscapedPath())
+		}
+		_, _ = w.Write([]byte(`{"id":1}`))
+	}))
+	defer server.Close()
+	t.Setenv("CANVAS_BASE_URL", server.URL+"/canvas")
+
+	for _, pathArg := range []string{"id=course/1", "course_id=course/1"} {
+		t.Setenv("CANVAS_API_TOKEN", "")
+		root := newRootCommand()
+		root.SetArgs([]string{"--json", "api", "invoke", "courses.show", "--path", pathArg, "--dry-run"})
+		data, err := captureCommandOutput(t, root)
+		if err != nil || !strings.Contains(string(data), `"target":"`+server.URL+`/canvas/api/v1/courses/course%2F1"`) {
+			t.Fatalf("dry-run %q: output = %s, error = %v", pathArg, data, err)
+		}
+
+		t.Setenv("CANVAS_API_TOKEN", "token")
+		root = newRootCommand()
+		root.SetArgs([]string{"api", "invoke", "courses.show", "--path", pathArg})
+		if _, err := captureCommandOutput(t, root); err != nil {
+			t.Fatalf("execution %q: %v", pathArg, err)
+		}
+	}
+
+	root := newRootCommand()
+	root.SetArgs([]string{"api", "invoke", "courses.show", "--path", "id=1", "--path", "course_id=2", "--dry-run"})
+	if _, err := captureCommandOutput(t, root); err == nil || !strings.Contains(err.Error(), "conflicting --path id and --path course_id values") {
+		t.Fatalf("conflicting aliases error = %v", err)
+	}
+	if requests != 2 {
+		t.Fatalf("requests = %d; want 2", requests)
+	}
+}
+
 func TestAPIInvokeDryRunKeepsAbsoluteTarget(t *testing.T) {
 	resetCommandGlobals(t)
 	t.Setenv("CANVAS_BASE_URL", "https://canvas.example.test/canvas")
