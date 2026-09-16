@@ -1,0 +1,110 @@
+{
+  "schema_version": 1,
+  "project": "canvas-cli",
+  "default_branch": "main",
+  "queue": {
+    "ready_label": "agent:ready",
+    "claimed_label": "agent:in-progress",
+    "blocked_label": "agent:blocked"
+  },
+  "pull_requests": {
+    "agent_label": "agent:codex",
+    "auto_merge_label": "agent:auto-merge",
+    "human_decision_label": "decision:human",
+    "risk_labels": [
+      "risk:low",
+      "risk:medium",
+      "risk:high"
+    ],
+    "required_body_headings": [
+      "## Outcome",
+      "## Evidence",
+      "## Risk and decisions"
+    ]
+  },
+  "auto_merge": {
+    "allowed_risk_label": "risk:low",
+    "protected_paths": [
+      ".github/workflows/**",
+      ".github/dependabot.yml",
+      ".agentic/**",
+      ".agents/**",
+      ".codex/**",
+      "AGENTS.md",
+      "SECURITY.md",
+      "go.mod",
+      "go.sum",
+      "cmd/auth.go",
+      "cmd/update.go",
+      "internal/config/**",
+      "internal/canvas/client.go",
+      "internal/api/generated.go",
+      "scripts/**",
+      "tools/**"
+    ]
+  },
+  "verification": {
+    "fast": [
+      "go test ./cmd/... ./internal/..."
+    ],
+    "full": [
+      "test -z \"$(gofmt -l .)\"",
+      "go test ./...",
+      "go vet ./...",
+      "go test -race ./...",
+      "go build -o /tmp/canvas-cli-verify ."
+    ]
+  },
+  "labels": [
+    {
+      "name": "agent:ready",
+      "color": "0E8A16",
+      "description": "Specified and approved for an implementation agent"
+    },
+    {
+      "name": "agent:in-progress",
+      "color": "1D76DB",
+      "description": "An agent has claimed this work"
+    },
+    {
+      "name": "agent:blocked",
+      "color": "B60205",
+      "description": "Agent needs a decision, authority, or external change"
+    },
+    {
+      "name": "agent:codex",
+      "color": "5319E7",
+      "description": "Authored or actively maintained by Codex"
+    },
+    {
+      "name": "agent:grok",
+      "color": "7057FF",
+      "description": "Triaged or independently reviewed by Grok Bot"
+    },
+    {
+      "name": "agent:auto-merge",
+      "color": "0E8A16",
+      "description": "Eligible for policy-gated automatic merge"
+    },
+    {
+      "name": "decision:human",
+      "color": "D93F0B",
+      "description": "Requires a human product, architecture, or risk decision"
+    },
+    {
+      "name": "risk:low",
+      "color": "C2E0C6",
+      "description": "Small, reversible, well-covered change"
+    },
+    {
+      "name": "risk:medium",
+      "color": "FBCA04",
+      "description": "Meaningful behavior or cross-cutting change; review required"
+    },
+    {
+      "name": "risk:high",
+      "color": "B60205",
+      "description": "Security, compatibility, architecture, or release risk"
+    }
+  ]
+}

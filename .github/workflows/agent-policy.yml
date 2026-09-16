@@ -1,0 +1,41 @@
+name: Agent policy
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited, labeled, unlabeled, ready_for_review, converted_to_draft]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: agent-policy-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check out trusted base revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Fetch pull request head without executing it
+        env:
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: git fetch --no-tags origin "pull/$PR_NUMBER/head:refs/remotes/origin/agent-policy-head"
+
+      - name: Test policy controller
+        run: python3 -m unittest discover -s scripts -p 'test_agentctl.py' -v
+
+      - name: Validate labels, evidence, and protected paths
+        run: >-
+          python3 scripts/agentctl.py validate-pr
+          --policy .agentic/policy.json
+          --event "$GITHUB_EVENT_PATH"
+          --base "${{ github.event.pull_request.base.sha }}"
+          --head refs/remotes/origin/agent-policy-head

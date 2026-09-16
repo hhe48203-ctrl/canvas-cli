@@ -11,6 +11,7 @@
 coverage.txt
 coverage.html
 *.prof
+__pycache__/
 
 # Local configuration and secrets
 .env
