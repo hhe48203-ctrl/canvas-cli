@@ -18,8 +18,8 @@ and compatibility over convenience that makes automation ambiguous.
 - `tools/`: API catalog generators and their fixtures.
 - `skills/canvas-lms/`: end-user skill for operating the installed CLI.
 - `.agents/skills/canvas-maintainer/`: repository maintenance workflow.
-- `.codex/agents/`: read-only exploration, test-design, and adversarial-review
-  subagent roles; the primary agent remains the only writer.
+- `.codex/agents/`: optional read-only exploration, test-design, and
+  adversarial-review roles; the primary agent remains the only writer.
 
 `progress.md` is a historical local work log. Do not update it unless the user
 explicitly asks for that file to be maintained.
@@ -45,10 +45,11 @@ explicitly asks for that file to be maintained.
 1. Start from an issue or write a short outcome and acceptance criteria before
    editing. Read `.agentic/policy.json` for risk and queue rules.
 2. Work on a branch or isolated worktree. Do not push directly to `main`.
-3. For non-trivial work, delegate exploration to `repo_explorer`, test analysis
-   to `test_analyst`, and final challenge review to `adversarial_reviewer`. One
-   primary agent owns the final edits in a worktree; do not let parallel writers
-   race on the same files.
+3. Let the primary agent handle ordinary work directly. Use at most one
+   read-only subagent per work item only when an independent investigation or
+   required final review materially improves confidence. Reuse existing
+   human/Grok review when suitable; do not create delegation trees. One primary
+   agent owns the final edits in a worktree.
 4. Reproduce bugs before changing production code. Add a focused failing test
    first when the repository already has a cheap test seam.
 5. Make the smallest coherent change that solves the root cause. Do not preserve
@@ -97,6 +98,9 @@ check both human and structured output when applicable.
   are approved. It authorizes Codex to implement and, by default, merge the
   resulting PR when every machine gate passes.
 - An agent-authored PR carries `agent:codex` and exactly one risk label.
+- A scheduled run may finish up to its configured cap of distinct work items;
+  the daily worker cap is three. An issue and its linked PR count as one item,
+  and each PR remains scoped to exactly one issue.
 - `agent:auto-merge` is allowed with `risk:low` or bounded `risk:medium`, no
   `decision:human`, no protected paths from `.agentic/policy.json`, complete
   evidence, green checks for the current head, and an independent review with

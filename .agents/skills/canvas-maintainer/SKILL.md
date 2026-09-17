@@ -30,8 +30,10 @@ installed product and must not be treated as development guidance.
    proposal.
 3. Claim the issue with `agent:in-progress` only when the current workflow is
    authorized to update GitHub. Avoid racing an existing branch, PR, or owner.
-4. Delegate bounded read-only exploration or independent test/review questions
-   when useful. Keep one writer responsible for the final worktree.
+4. Work directly by default. Use at most one bounded read-only subagent for this
+   item only when a clearly independent investigation or required final review
+   adds material value. Prefer an existing human or Grok review when it provides
+   the required independence. Keep one writer responsible for the worktree.
 5. Reproduce a bug or establish a measurable baseline. Use a failing regression
    test first when there is an existing cheap seam.
 6. Implement the narrowest coherent root-cause fix. Preserve confirmation,
