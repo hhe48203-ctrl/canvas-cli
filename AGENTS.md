@@ -55,7 +55,8 @@ explicitly asks for that file to be maintained.
    a legacy path unless compatibility is intentional and tested.
 6. Run the relevant fast checks while iterating and the full gate before a PR.
 7. Review the complete diff against the issue, then open a draft PR with the
-   repository template and correct risk labels.
+   repository template and correct risk labels. Guard it through current CI and
+   independent review, then merge it when the policy gate permits.
 
 ## Human decision checkpoints
 
@@ -92,12 +93,23 @@ check both human and structured output when applicable.
 
 ## Pull requests and autonomy
 
-- `agent:ready` means the issue is sufficiently specified for implementation.
+- `agent:ready` means scope, acceptance criteria, and required human decisions
+  are approved. It authorizes Codex to implement and, by default, merge the
+  resulting PR when every machine gate passes.
 - An agent-authored PR carries `agent:codex` and exactly one risk label.
-- `agent:auto-merge` is allowed only with `risk:low`, no `decision:human`, no
-  protected paths from `.agentic/policy.json`, green required checks, and an
-  independent review with no unresolved consequential finding.
-- Medium/high-risk changes remain draft or review-required even when tests pass.
+- `agent:auto-merge` is allowed with `risk:low` or bounded `risk:medium`, no
+  `decision:human`, no protected paths from `.agentic/policy.json`, complete
+  evidence, green checks for the current head, and an independent review with
+  no unresolved consequential finding.
+- Codex moves an eligible PR out of draft and applies `agent:auto-merge` after
+  final-head evidence and independent review are recorded, then waits for the
+  label-triggered policy check before running the merge gate.
+- Before merging, fetch the remote default branch and run its trusted
+  `scripts/agentctl.py merge-gate` and `.agentic/policy.json` from a clean
+  `origin/main` worktree, never from the PR branch. Merge with squash and
+  `--match-head-commit` only when it returns success.
+- `risk:high`, protected paths, requested human review, unresolved findings, or
+  missing evidence always remain human-merged even when tests pass.
 - A failed or flaky gate is work to investigate, not a reason to weaken the
   check. Document a genuine infrastructure flake before retrying it.
 
