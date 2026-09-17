@@ -1,0 +1,44 @@
+name: Feature or behavior change
+description: Propose an outcome that may need a product or compatibility decision.
+title: "[Feature]: "
+labels:
+  - enhancement
+  - decision:human
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and user outcome
+      description: Describe the job to be done before proposing a command or implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Include example CLI input/output if it affects the public interface.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and compatibility
+      description: What smaller option, existing API operation, or compatibility constraint should be considered?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable behavior and verification, not implementation steps alone.
+    validations:
+      required: true
+  - type: dropdown
+    id: decision
+    attributes:
+      label: Decision status
+      options:
+        - Needs human product or architecture decision
+        - Direction approved; implementation can be delegated
+    validations:
+      required: true
