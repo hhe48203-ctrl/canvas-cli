@@ -14,7 +14,7 @@ installed product and must not be treated as development guidance.
 - **Triage:** determine whether a report is reproducible, duplicate, already
   fixed, a feature decision, or ready for implementation. Do not edit code.
 - **Issue to PR:** implement one `agent:ready` issue in an isolated branch or
-  worktree and produce a verified draft PR.
+  worktree, produce a verified PR, and carry it through the permitted merge.
 - **PR guardian:** inspect CI, reviews, conflicts, and the current head; repair
   legitimate failures without broadening scope.
 - **Release:** follow the repository release documentation and never invent or
@@ -49,10 +49,16 @@ installed product and must not be treated as development guidance.
 - Verify each finding against code and tests before changing anything.
 - Keep fixes on the existing PR branch, rerun the narrow failure first, then the
   full required gate.
-- Never merge medium/high-risk work or a PR carrying `decision:human`.
-- For `agent:auto-merge`, independently re-check the policy, changed paths,
-  green required checks, unresolved conversations, and current head SHA. If any
-  signal is missing or changed, leave the PR open.
+- Never merge high-risk work, protected paths, or a PR carrying
+  `decision:human`. Bounded medium-risk work is eligible when policy permits.
+- After final-head evidence and independent review are recorded, move an
+  eligible PR out of draft, apply `agent:auto-merge`, and wait for the resulting
+  policy check on that same head.
+- For `agent:auto-merge`, independently re-check the full current diff. Fetch
+  the default branch and run its trusted `scripts/agentctl.py merge-gate` and
+  policy from a clean `origin/main` worktree, never from the PR branch. Only
+  after it succeeds, squash-merge with `--match-head-commit` and confirm the
+  linked issue closed. Any head change invalidates the gate result.
 
 ## Retrospective
 

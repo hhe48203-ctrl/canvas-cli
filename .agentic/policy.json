@@ -19,11 +19,29 @@
     "required_body_headings": [
       "## Outcome",
       "## Evidence",
-      "## Risk and decisions"
+      "## Risk and decisions",
+      "## Independent review"
     ]
   },
   "auto_merge": {
-    "allowed_risk_label": "risk:low",
+    "allowed_risk_labels": [
+      "risk:low",
+      "risk:medium"
+    ],
+    "required_checks": [
+      "CI / test (ubuntu-latest)",
+      "CI / test (windows-latest)",
+      "Agent policy / validate"
+    ],
+    "required_evidence_items": [
+      "Targeted test or reproduction",
+      "`test -z \"$(gofmt -l .)\"`",
+      "`go test ./...`",
+      "`go vet ./...`",
+      "`go test -race ./...`",
+      "`go build -o /tmp/canvas-cli-verify .`"
+    ],
+    "runtime_evidence_paths": [],
     "protected_paths": [
       ".github/workflows/**",
       ".github/dependabot.yml",
@@ -99,7 +117,7 @@
     {
       "name": "risk:medium",
       "color": "FBCA04",
-      "description": "Meaningful behavior or cross-cutting change; review required"
+      "description": "Meaningful but bounded change; policy-gated agent merge eligible"
     },
     {
       "name": "risk:high",

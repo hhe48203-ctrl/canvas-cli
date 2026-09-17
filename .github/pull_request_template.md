@@ -6,7 +6,9 @@ Closes #
 
 ## Evidence
 
-<!-- Include failing-before/passing-after evidence where practical. -->
+<!-- Include failing-before/passing-after evidence where practical. Mark every
+item complete, including N/A with an explanation; unchecked items block agent
+merge. -->
 
 - [ ] Targeted test or reproduction
 - [ ] `test -z "$(gofmt -l .)"`
@@ -23,6 +25,15 @@ Closes #
 - Human decision required: no / yes — explain
 - Compatibility or security impact: none / explain
 - Generated files: none / explain source and generator
+
+## Independent review
+
+<!-- A read-only reviewer must inspect the final commit. Replace pending and the
+placeholder SHA only after every consequential finding is resolved. -->
+
+- Independent review: pending
+- Reviewed head: `HEAD_SHA`
+- Findings: pending
 
 ## Review notes
 
