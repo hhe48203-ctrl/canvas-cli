@@ -16,12 +16,7 @@
       "risk:medium",
       "risk:high"
     ],
-    "required_body_headings": [
-      "## Outcome",
-      "## Evidence",
-      "## Risk and decisions",
-      "## Independent review"
-    ]
+    "required_body_headings": []
   },
   "auto_merge": {
     "allowed_risk_labels": [
@@ -35,11 +30,7 @@
     ],
     "required_evidence_items": [
       "Targeted test or reproduction",
-      "`test -z \"$(gofmt -l .)\"`",
-      "`go test ./...`",
-      "`go vet ./...`",
-      "`go test -race ./...`",
-      "`go build -o /tmp/canvas-cli-verify .`"
+      "Full repository gate"
     ],
     "runtime_evidence_paths": [],
     "protected_paths": [

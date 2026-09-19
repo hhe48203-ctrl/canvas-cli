@@ -45,11 +45,11 @@ explicitly asks for that file to be maintained.
 1. Start from an issue or write a short outcome and acceptance criteria before
    editing. Read `.agentic/policy.json` for risk and queue rules.
 2. Work on a branch or isolated worktree. Do not push directly to `main`.
-3. Let the primary agent handle ordinary work directly. Use at most one
-   read-only subagent per work item only when an independent investigation or
-   required final review materially improves confidence. Reuse existing
-   human/Grok review when suitable; do not create delegation trees. One primary
-   agent owns the final edits in a worktree.
+3. Default to zero subagents. The primary agent investigates, implements, and
+   tests ordinary work directly. Use one read-only subagent only when policy
+   requires an independent review and no suitable human/Grok review exists, or
+   when the primary agent is blocked on a separable question. Never create
+   delegation trees or parallel writers.
 4. Reproduce bugs before changing production code. Add a focused failing test
    first when the repository already has a cheap test seam.
 5. Make the smallest coherent change that solves the root cause. Do not preserve
@@ -98,6 +98,9 @@ check both human and structured output when applicable.
   are approved. It authorizes Codex to implement and, by default, merge the
   resulting PR when every machine gate passes.
 - An agent-authored PR carries `agent:codex` and exactly one risk label.
+- PR policy does not require exact body headings. Keep the body concise; the
+  merge gate, not the initial PR check, enforces final evidence and review
+  attestations for `agent:auto-merge`.
 - A scheduled run may finish up to its configured cap of distinct work items;
   the daily worker cap is three. An issue and its linked PR count as one item,
   and each PR remains scoped to exactly one issue.

@@ -18,17 +18,12 @@ POLICY = {
         "auto_merge_label": "agent:auto-merge",
         "human_decision_label": "decision:human",
         "risk_labels": ["risk:low", "risk:medium", "risk:high"],
-        "required_body_headings": [
-            "## Outcome",
-            "## Evidence",
-            "## Risk and decisions",
-            "## Independent review",
-        ],
+        "required_body_headings": [],
     },
     "auto_merge": {
         "allowed_risk_labels": ["risk:low", "risk:medium"],
         "required_checks": ["CI / test", "Agent policy / validate"],
-        "required_evidence_items": ["Targeted test", "Full gate"],
+        "required_evidence_items": ["Targeted test", "Full repository gate"],
         "runtime_evidence_paths": [],
         "protected_paths": [".github/workflows/**", "go.mod"],
     },
@@ -67,9 +62,8 @@ def remote_pull_request(**overrides):
     value = {
         "baseRefName": "main",
         "body": (
-            "## Outcome\nDone\n\n## Evidence\n- [x] Targeted test\n"
-            "- [x] Full gate\n\n## Risk and decisions\nMedium\n\n"
-            "## Independent review\n- Independent review: passed\n"
+            "Summary\n\n- [x] Targeted test\n"
+            "- [x] Full repository gate\n\n- Independent review: passed\n"
             "- Reviewed head: `abc123`\n- Findings: none\n"
         ),
         "closingIssuesReferences": [
@@ -135,11 +129,11 @@ class AgentPolicyTests(unittest.TestCase):
         )
         self.assertTrue(any("exactly one risk" in error for error in errors))
 
-    def test_agent_pull_request_needs_evidence_headings(self):
+    def test_agent_pull_request_accepts_short_body(self):
         errors = agentctl.validate_pull_request(
-            POLICY, event("agent:codex", "risk:low", body="## Outcome\nDone"), []
+            POLICY, event("agent:codex", "risk:low", body="Short summary"), []
         )
-        self.assertTrue(any("missing required headings" in error for error in errors))
+        self.assertEqual(errors, [])
 
     def test_low_risk_auto_merge_passes(self):
         errors = agentctl.validate_pull_request(
