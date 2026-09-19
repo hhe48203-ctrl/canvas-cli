@@ -30,19 +30,19 @@ installed product and must not be treated as development guidance.
    proposal.
 3. Claim the issue with `agent:in-progress` only when the current workflow is
    authorized to update GitHub. Avoid racing an existing branch, PR, or owner.
-4. Work directly by default. Use at most one bounded read-only subagent for this
-   item only when a clearly independent investigation or required final review
-   adds material value. Prefer an existing human or Grok review when it provides
-   the required independence. Keep one writer responsible for the worktree.
+4. Default to zero subagents. Use one read-only subagent only when a required
+   independent review has no suitable human/Grok substitute, or when the primary
+   agent is blocked on a separable question. Never delegate routine exploration,
+   implementation, or test planning. Keep one writer for the worktree.
 5. Reproduce a bug or establish a measurable baseline. Use a failing regression
    test first when there is an existing cheap seam.
 6. Implement the narrowest coherent root-cause fix. Preserve confirmation,
    credential, structured-output, ID, redirect, and generated-code invariants.
 7. Run targeted checks, then the full policy gate. Inspect the actual CLI output
    or generated artifact when compilation alone would be a proxy.
-8. Review the whole diff and open a draft PR using the template. Apply
-   `agent:codex`, the risk label, and `decision:human` when applicable. Include
-   failing-before/passing-after evidence or say why that proof was impractical.
+8. Review the whole diff and open a concise draft PR using the template. Apply
+   `agent:codex`, the risk label, and `decision:human` when applicable. Complete
+   final merge attestations only when preparing `agent:auto-merge`.
 
 ## PR guardian
 
